@@ -1,18 +1,17 @@
 {
   "task_name": "Add integration tests for review.py to increase coverage to 75%",
-  "task_description": "Create tests/integration/test_review_loop.py that tests the Coder ↔ Reviewer validation loop. Mock run_claude_session to simulate reviewer behavior. Target: 75% coverage on review.py. Follow CLAUDE.md testing requirements - write workflow tests first, no mocking of core logic.",
   "subtasks": [
     {
       "id": "review-test-1",
       "description": "Create test_review_loop.py with fixtures and basic structure. Set up test fixtures for git repo, config with review enabled, sample subtask. Create mock_reviewer_approved and mock_reviewer_changes_requested fixtures following test_orchestration_flow.py patterns.",
-      "status": "pending",
+      "status": "completed",
       "attempts": 0,
       "last_approach": null
     },
     {
       "id": "review-test-2",
       "description": "Write test_review_loop_approves_on_first_try. Test happy path where reviewer approves immediately. Mock run_claude_session to return review.approved event. Verify run_review_loop returns True, reviewer session called once, no coder fix sessions called. Target lines 60-86 in review.py.",
-      "status": "pending",
+      "status": "in_progress",
       "attempts": 0,
       "last_approach": null
     },
@@ -72,5 +71,7 @@
       "attempts": 0,
       "last_approach": null
     }
-  ]
+  ],
+  "created_at": "2026-01-27T20:56:55.773006Z",
+  "updated_at": "2026-01-27T21:00:04.007762Z"
 }

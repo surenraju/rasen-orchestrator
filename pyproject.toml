@@ -60,6 +60,7 @@ select = [
 ignore = [
     "PLR0913",  # Too many arguments
     "PLR2004",  # Magic value comparison
+    "TC003",    # Move stdlib into type-checking block (overly aggressive)
 ]
 
 [tool.ruff.lint.isort]

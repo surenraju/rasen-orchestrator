@@ -11,7 +11,8 @@
       "Bash(uv run pytest:*)",
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nPhase 1 Foundation: Core infrastructure, config, models, CLI skeleton\n\nImplemented:\n- Exception hierarchy \\(src/rasen/exceptions.py\\)\n- Logging setup \\(src/rasen/logging.py\\)\n- Configuration system with Pydantic models \\(src/rasen/config.py\\)\n- Domain models \\(src/rasen/models.py\\) - TerminationReason, SessionStatus, Subtask, etc.\n- CLI skeleton with Click \\(src/rasen/cli.py\\) - init, run, status, logs, stop, resume, merge\n- Example config file \\(rasen.yml.example\\)\n- py.typed marker for type checking\n- Updated pyproject.toml to exclude Auto-Claude, ralph-orchestrator, _bmad from linting\n\nQuality gates:\n- ✅ uv run ruff check . passes\n- ✅ uv run ruff format --check . passes\n- ✅ uv run mypy src/ passes\n- ✅ uv run rasen --help works\n- ✅ uv run rasen --version shows 0.1.0\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git config:*)"
+      "Bash(git config:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nPhase 2: Claude Code CLI Integration - subprocess wrapper and event parsing\n\nImplemented:\n- Claude Code CLI wrapper \\(src/rasen/claude_runner.py\\)\n  - run_claude_session\\(\\) subprocess wrapper with timeout support\n  - Agent configs for initializer, coder, reviewer, QA\n  - Reviewer and QA marked as read-only\n- Prompt template renderer \\(src/rasen/prompts.py\\)\n  - render_prompt\\(\\) with {variable} substitution\n  - create_agent_prompt\\(\\) for agent-specific prompts\n- Event parser \\(src/rasen/events.py\\)\n  - parse_events\\(\\) extracts <event topic=\"...\">...</event> tags\n  - has_completion_event\\(\\), has_blocked_event\\(\\) helpers\n  - get_event_payload\\(\\) utility\n\nQuality gates:\n- ✅ uv run ruff check . passes\n- ✅ uv run mypy src/ passes\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

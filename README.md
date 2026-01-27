@@ -13,6 +13,20 @@
 
 Production-ready orchestrator for long-running autonomous coding tasks using Claude Code CLI. Multi-agent workflow with intelligent validation, recovery, and human escalation.
 
+## Why It Works
+
+RASEN implements [Anthropic's best practices for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), applying proven patterns from production autonomous systems:
+
+**Core Principles:**
+- **Extended Two-Agent Pattern** - Separate planning (Initializer) from execution (Coder), with read-only validators (Reviewer, QA) preventing corruption
+- **Fresh Context Over Compaction** - Each session starts clean, preventing context degradation over long runs
+- **Single Subtask Sessions** - One task per iteration prevents scope creep and enables precise recovery
+- **Intelligent Recovery** - Tracks failed approaches, detects circular fixes (30% similarity threshold), escalates recurring issues (3+ occurrences)
+- **Quality Gates** - Requires explicit evidence ("tests: pass, lint: pass") before completion, no hand-waving
+- **Human Escalation** - Creates `QA_ESCALATION.md` when automated recovery fails, preventing infinite loops
+
+**Result:** Reliable multi-hour autonomous coding with graceful degradation instead of silent failures.
+
 ## Quick Start
 
 ```bash

@@ -288,13 +288,13 @@ class OrchestrationLoop:
         """
         # Prepare prompt
         memory_context = self.memory_store.format_for_injection(self.config.memory.max_tokens)
-        failed_approaches = self.recovery_store.get_failed_approaches(subtask_id)
+        recovery_hints = self.recovery_store.get_recovery_hints(subtask_id)
         attempt_number = self.recovery_store.get_attempt_count(subtask_id) + 1
 
         failed_section = ""
-        if failed_approaches:
+        if recovery_hints:
             failed_section = "## Previous Failed Approaches\n" + "\n".join(
-                f"- {approach}" for approach in failed_approaches
+                f"- {hint}" for hint in recovery_hints
             )
 
         prompt = create_agent_prompt(

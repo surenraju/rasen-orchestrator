@@ -1,0 +1,50 @@
+# RASEN Configuration Example
+# Copy to rasen.yml and customize
+
+project:
+  name: "my-project"
+  root: "."
+
+orchestrator:
+  max_iterations: 50
+  max_runtime_seconds: 14400        # 4 hours (for multi-hour runs)
+  session_delay_seconds: 3
+  session_timeout_seconds: 1800     # 30 minutes per session max
+  idle_timeout_seconds: 300         # 5 minutes no output = stalled
+
+agent:
+  model: "claude-sonnet-4-20250514"
+  max_thinking_tokens: 4096
+
+worktree:
+  enabled: true
+  base_path: ".worktrees"
+
+memory:
+  enabled: true
+  path: ".rasen/memories.md"
+  max_tokens: 2000
+
+backpressure:
+  require_tests: true
+  require_lint: true
+
+background:
+  enabled: false                    # Use --background flag to enable
+  pid_file: ".rasen/rasen.pid"
+  log_file: ".rasen/rasen.log"
+  status_file: ".rasen/status.json"
+
+stall_detection:
+  max_no_commit_sessions: 3         # Abort if 3 sessions with no commits
+  max_consecutive_failures: 5       # Abort after 5 consecutive failures
+  circular_fix_threshold: 0.3       # 30% keyword similarity = circular fix
+
+review:
+  enabled: true                     # Run Coder ↔ Reviewer loop per subtask
+  max_loops: 3                      # Max review iterations before escalating
+
+qa:
+  enabled: true                     # Run Coder ↔ QA loop after all subtasks
+  max_iterations: 50                # Max QA iterations
+  recurring_issue_threshold: 3      # Escalate after 3+ occurrences of same issue

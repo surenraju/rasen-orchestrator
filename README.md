@@ -155,14 +155,6 @@ rasen resume                     # Resume after interruption
 rasen --help                     # Show all commands
 ```
 
-## Documentation
-
-- **[Configuration Guide](docs/configuration.md)** - Complete settings reference
-- **[Background Mode Guide](docs/background-mode.md)** - Long-running tasks
-- **[Implementation Plan](docs/plan.md)** - Development roadmap
-- **[BUILD.md](BUILD.md)** - Building standalone binary
-- **[CLAUDE.MD](CLAUDE.MD)** - Project instructions for AI assistants
-
 ## Development
 
 ```bash

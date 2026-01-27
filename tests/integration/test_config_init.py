@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import pytest
 import yaml
 
 
 def test_init_creates_config_file(tmp_path: Path) -> None:
     """Test that rasen init creates rasen-config.yml."""
-    from rasen.cli import main
     from click.testing import CliRunner
+
+    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -31,15 +30,19 @@ def test_init_creates_config_file(tmp_path: Path) -> None:
         assert "reviewer" in config_data["agents"]
         assert "qa" in config_data["agents"]
         assert "session" in config_data
-        assert "review" in config_data
-        assert "qa" in config_data
         assert "stall" in config_data
+        # Review/QA settings now nested under agents
+        assert "enabled" in config_data["agents"]["reviewer"]
+        assert "max_iterations" in config_data["agents"]["reviewer"]
+        assert "enabled" in config_data["agents"]["qa"]
+        assert "max_iterations" in config_data["agents"]["qa"]
 
 
 def test_init_copies_agent_prompts(tmp_path: Path) -> None:
     """Test that rasen init copies all agent prompts to .rasen/prompts/."""
-    from rasen.cli import main
     from click.testing import CliRunner
+
+    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -60,8 +63,9 @@ def test_init_copies_agent_prompts(tmp_path: Path) -> None:
 
 def test_init_doesnt_overwrite_custom_prompts(tmp_path: Path) -> None:
     """Test that rasen init doesn't overwrite existing custom prompts."""
-    from rasen.cli import main
     from click.testing import CliRunner
+
+    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -131,8 +135,9 @@ def test_create_agent_prompt_falls_back_to_bundled(tmp_path: Path) -> None:
 
 def test_init_output_shows_customization_instructions(tmp_path: Path) -> None:
     """Test that rasen init output guides users to customize."""
-    from rasen.cli import main
     from click.testing import CliRunner
+
+    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -149,8 +154,9 @@ def test_init_output_shows_customization_instructions(tmp_path: Path) -> None:
 
 def test_config_file_has_correct_defaults(tmp_path: Path) -> None:
     """Test that rasen-config.yml has sensible defaults."""
-    from rasen.cli import main
     from click.testing import CliRunner
+
+    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -160,27 +166,33 @@ def test_config_file_has_correct_defaults(tmp_path: Path) -> None:
         config_file = Path(".rasen/rasen-config.yml")
         config = yaml.safe_load(config_file.read_text())
 
-        # Verify defaults
+        # Verify session defaults
         assert config["session"]["timeout_seconds"] == 1800  # 30 minutes
         assert config["session"]["max_iterations"] == 100
-        assert config["review"]["enabled"] is True
-        assert config["review"]["max_iterations"] == 3
-        assert config["qa"]["enabled"] is True
-        assert config["qa"]["max_iterations"] == 50
+
+        # Verify stall detection defaults
         assert config["stall"]["max_no_commit_sessions"] == 3
         assert config["stall"]["max_consecutive_failures"] == 5
 
-        # Verify read-only agents
+        # Verify agent defaults (nested structure)
         assert config["agents"]["reviewer"]["read_only"] is True
+        assert config["agents"]["reviewer"]["enabled"] is True
+        assert config["agents"]["reviewer"]["max_iterations"] == 3
+
         assert config["agents"]["qa"]["read_only"] is True
+        assert config["agents"]["qa"]["enabled"] is True
+        assert config["agents"]["qa"]["max_iterations"] == 50
+        assert config["agents"]["qa"]["recurring_issue_threshold"] == 3
+
         assert config["agents"]["coder"]["read_only"] is False
         assert config["agents"]["initializer"]["read_only"] is False
 
 
 def test_prompt_paths_in_config(tmp_path: Path) -> None:
     """Test that config references correct prompt paths."""
-    from rasen.cli import main
     from click.testing import CliRunner
+
+    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -199,18 +211,15 @@ def test_prompt_paths_in_config(tmp_path: Path) -> None:
 
 def test_multiple_inits_preserve_state(tmp_path: Path) -> None:
     """Test that multiple rasen init calls preserve existing state."""
-    from rasen.cli import main
     from click.testing import CliRunner
+
+    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
         # First init
         result = runner.invoke(main, ["init", "--task", "Task 1"])
         assert result.exit_code == 0
-
-        # Create some state
-        status_file = Path(".rasen/status.json")
-        original_status = json.loads(status_file.read_text())
 
         # Modify config
         config_file = Path(".rasen/rasen-config.yml")

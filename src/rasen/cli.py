@@ -65,42 +65,41 @@ def init(ctx: click.Context, task: str) -> None:
     config_file = rasen_dir / "rasen-config.yml"
     if not config_file.exists():
         config_template = """# RASEN Configuration
-# Customize agent prompts in .rasen/prompts/ directory
+# Customize agent prompts and behavior in .rasen/prompts/ directory
+# This file overrides settings from project-level rasen.yml
 
 # Agent settings
 agents:
   initializer:
     prompt: prompts/initializer.md
     read_only: false
+
   coder:
     prompt: prompts/coder.md
     read_only: false
+
   reviewer:
     prompt: prompts/reviewer.md
     read_only: true  # Reviewer cannot modify files
+    enabled: true    # Run code review after each subtask
+    max_iterations: 3  # Max review loops before escalation
+
   qa:
     prompt: prompts/qa.md
     read_only: true  # QA cannot modify files
+    enabled: true    # Run QA validation after all subtasks
+    max_iterations: 50  # Max QA loops before escalation
+    recurring_issue_threshold: 3  # Escalate after N occurrences
 
 # Session settings
 session:
-  timeout_seconds: 1800  # 30 minutes
-  max_iterations: 100
-
-# Review loop settings
-review:
-  enabled: true
-  max_iterations: 3
-
-# QA loop settings
-qa:
-  enabled: true
-  max_iterations: 50
+  timeout_seconds: 1800  # 30 minutes per session
+  max_iterations: 100    # Max total iterations
 
 # Stall detection
 stall:
-  max_no_commit_sessions: 3
-  max_consecutive_failures: 5
+  max_no_commit_sessions: 3      # Abort if N sessions with no commits
+  max_consecutive_failures: 5    # Abort after N consecutive failures
 """
         config_file.write_text(config_template)
 

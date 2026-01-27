@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -104,16 +105,83 @@ class Config(BaseModel):
     qa: QAConfig = Field(default_factory=QAConfig)
 
 
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Deep merge two dictionaries.
+
+    Args:
+        base: Base dictionary
+        override: Override dictionary (takes precedence)
+
+    Returns:
+        Merged dictionary with override values taking precedence
+    """
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            # Recursively merge nested dicts
+            result[key] = _deep_merge(result[key], value)
+        else:
+            # Override value
+            result[key] = value
+    return result
+
+
+def _transform_task_config(data: dict[str, Any]) -> dict[str, Any]:
+    """Transform .rasen/rasen-config.yml structure to match Config model.
+
+    Transforms nested agents.reviewer/agents.qa settings into separate
+    review and qa top-level sections for compatibility with existing Config model.
+
+    Args:
+        data: Raw YAML data from .rasen/rasen-config.yml
+
+    Returns:
+        Transformed data matching Config model structure
+    """
+    if "agents" not in data:
+        return data
+
+    result = data.copy()
+    agents = result.get("agents", {})
+
+    # Extract reviewer settings -> review section
+    if "reviewer" in agents and isinstance(agents["reviewer"], dict):
+        reviewer_config = agents["reviewer"]
+        if "enabled" in reviewer_config or "max_iterations" in reviewer_config:
+            if "review" not in result:
+                result["review"] = {}
+            if "enabled" in reviewer_config:
+                result["review"]["enabled"] = reviewer_config["enabled"]
+            if "max_iterations" in reviewer_config:
+                result["review"]["max_loops"] = reviewer_config["max_iterations"]
+
+    # Extract qa settings -> qa section
+    if "qa" in agents and isinstance(agents["qa"], dict):
+        qa_config = agents["qa"]
+        if any(k in qa_config for k in ["enabled", "max_iterations", "recurring_issue_threshold"]):
+            if "qa" not in result:
+                result["qa"] = {}
+            if "enabled" in qa_config:
+                result["qa"]["enabled"] = qa_config["enabled"]
+            if "max_iterations" in qa_config:
+                result["qa"]["max_iterations"] = qa_config["max_iterations"]
+            if "recurring_issue_threshold" in qa_config:
+                result["qa"]["recurring_issue_threshold"] = qa_config["recurring_issue_threshold"]
+
+    return result
+
+
 def load_config(config_path: Path | None = None) -> Config:
     """Load configuration from YAML file with environment overrides.
 
     Priority (highest to lowest):
     1. Environment variables (RASEN_AGENT_MODEL, etc.)
-    2. Config file (rasen.yml)
-    3. Defaults
+    2. .rasen/rasen-config.yml (task-specific config, if exists)
+    3. rasen.yml (project-level config)
+    4. Defaults
 
     Args:
-        config_path: Path to config file. If None, searches for rasen.yml.
+        config_path: Path to config file. If None, auto-detects config files.
 
     Returns:
         Validated Config object.
@@ -121,19 +189,30 @@ def load_config(config_path: Path | None = None) -> Config:
     Raises:
         ConfigurationError: If config file is invalid.
     """
-    # Find config file
-    if config_path is None:
-        config_path = Path("rasen.yml")
+    data: dict[str, Any] = {}
 
-    # Load from file if exists
-    if config_path.exists():
+    # 1. Load project-level config (rasen.yml)
+    project_config = Path("rasen.yml") if config_path is None else config_path
+
+    if project_config.exists():
         try:
-            with config_path.open() as f:
+            with project_config.open() as f:
                 data = yaml.safe_load(f) or {}
         except yaml.YAMLError as e:
-            raise ConfigurationError(f"Invalid YAML in {config_path}: {e}") from e
-    else:
-        data = {}
+            raise ConfigurationError(f"Invalid YAML in {project_config}: {e}") from e
+
+    # 2. Load task-specific config (.rasen/rasen-config.yml) and merge
+    task_config = Path(".rasen/rasen-config.yml")
+    if task_config.exists():
+        try:
+            with task_config.open() as f:
+                task_data = yaml.safe_load(f) or {}
+                # Transform new structure (agents.reviewer.enabled -> review.enabled)
+                task_data = _transform_task_config(task_data)
+                # Deep merge: task config overrides project config
+                data = _deep_merge(data, task_data)
+        except yaml.YAMLError as e:
+            raise ConfigurationError(f"Invalid YAML in {task_config}: {e}") from e
 
     # Apply environment overrides
     data = _apply_env_overrides(data)

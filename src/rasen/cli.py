@@ -48,7 +48,8 @@ def init(ctx: click.Context, task: str) -> None:
 
     from rasen.stores.status_store import StatusInfo, StatusStore  # noqa: PLC0415
 
-    status_store = StatusStore(rasen_dir)
+    status_file = rasen_dir / "status.json"
+    status_store = StatusStore(status_file)
     status_store.update(
         StatusInfo(
             pid=os.getpid(),
@@ -142,7 +143,7 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
                 'Error: No task found. Run \'rasen init --task "description"\' first.',
                 err=True,
             )
-            return
+            ctx.exit(1)
 
     # Setup signal handlers if not already done (foreground mode)
     if not background:

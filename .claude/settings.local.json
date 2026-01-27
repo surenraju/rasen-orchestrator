@@ -20,7 +20,10 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nPhase 4B-C: Review and QA validation loops\n\nImplemented:\n- Review loop \\(src/rasen/review.py\\)\n  - Coder ↔ Reviewer validation pattern\n  - Reviewer validates each subtask \\(read-only\\)\n  - Max 3 review iterations before failing\n  - ReviewResult model for approval/feedback\n  - Automatic fix sessions when changes requested\n  \n- QA loop \\(src/rasen/qa.py\\)\n  - Coder ↔ QA validation pattern \\(runs after ALL subtasks\\)\n  - QA validates against acceptance criteria \\(read-only\\)\n  - Max 50 QA iterations\n  - Recurring issue detection \\(3+ occurrences\\)\n  - QAHistory tracks issues across iterations\n  - Creates QA_ESCALATION.md for human intervention\n  - QAResult and QAIssue models\n\n- Orchestration loop integration \\(src/rasen/loop.py\\)\n  - Review loop runs after each subtask completion\n  - QA loop runs when all subtasks are done\n  - Baseline commit tracking for diffs\n  - task_description passed through for QA context\n  - Review/QA failures handled with consecutive failure tracking\n\n- CLI enhancements \\(src/rasen/cli.py\\)\n  - Loads task description from plan for QA context\n  - Shows completion status with review/QA indicators\n  - Lazy import of PlanStore for performance\n\nFeatures:\n- ✅ Read-only validation agents \\(cannot modify files\\)\n- ✅ Iterative fix loops with max iteration limits\n- ✅ Recurring issue escalation with markdown report\n- ✅ Git diff generation for review context\n- ✅ Configurable enable/disable via flags \\(--skip-review, --skip-qa\\)\n\nQuality gates:\n- ✅ uv run ruff check . passes\n- ✅ uv run mypy src/ passes \\(strict mode\\)\n- ✅ 20 modules, all type-safe\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit:*)",
       "Bash(chmod:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Bash(python:*)",
+      "Bash(uv pip install:*)"
     ]
   }
 }

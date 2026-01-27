@@ -127,8 +127,7 @@ def daemonize(
     existing_pid = read_pid_file(pid_file)
     if existing_pid and is_process_running(existing_pid):
         raise RuntimeError(
-            f"Daemon already running with PID {existing_pid}. "
-            f"Use 'rasen stop' to stop it first."
+            f"Daemon already running with PID {existing_pid}. Use 'rasen stop' to stop it first."
         )
 
     # Fork first time

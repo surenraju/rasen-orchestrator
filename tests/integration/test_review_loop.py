@@ -31,6 +31,7 @@ from rasen.config import (
     WorktreeConfig,
 )
 from rasen.events import Event
+from rasen.exceptions import SessionError
 from rasen.models import Subtask
 from rasen.review import _run_reviewer_session, run_review_loop
 
@@ -593,6 +594,58 @@ def test_review_loop_exceeds_max_iterations(
             assert "test-subtask-1" in call_args_list[4][0][0], (
                 "Fifth call should be reviewer (final iteration)"
             )
+
+
+def test_reviewer_session_handles_failure(
+    test_config_with_review: Config,
+    sample_subtask: Subtask,
+    git_repo: Path,
+) -> None:
+    """Test _run_reviewer_session handles SessionError gracefully.
+
+    This tests the error handling in _run_reviewer_session (lines 156-159).
+    It verifies:
+    - When run_claude_session raises SessionError
+    - _run_reviewer_session catches it and logs error
+    - Returns approved=True (fail-open to not block progress)
+    - Feedback message indicates reviewer session failed
+
+    This specifically tests lines 156-159 in review.py:
+    - Line 156: Catch SessionError exception
+    - Line 157: Log error about reviewer session failure
+    - Line 158-159: Return ReviewResult(approved=True) with failure message
+    """
+    # Get baseline commit
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    baseline_commit = result.stdout.strip()
+
+    # Mock run_claude_session to raise SessionError
+    with patch("rasen.review.run_claude_session") as mock_session:
+        # Simulate SessionError
+        mock_session.side_effect = SessionError("Mock session error for testing")
+
+        # Run reviewer session
+        result = _run_reviewer_session(
+            test_config_with_review,
+            sample_subtask,
+            git_repo,
+            baseline_commit,
+        )
+
+        # Assertions
+        assert result.approved is True, "Should be approved (fail-open) when SessionError occurs"
+        assert result.feedback == "Reviewer session failed, assuming approved", (
+            "Feedback should indicate reviewer session failed"
+        )
+
+        # Verify the session was called (and raised exception)
+        assert mock_session.called, "run_claude_session should have been called"
 
 
 if __name__ == "__main__":

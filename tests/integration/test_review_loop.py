@@ -385,5 +385,99 @@ def test_review_loop_requests_changes_then_approves(
             )
 
 
+def test_review_loop_exceeds_max_iterations(
+    test_config_with_review: Config,
+    sample_subtask: Subtask,
+    git_repo: Path,
+) -> None:
+    """Test review loop stops at max_loops when reviewer always requests changes.
+
+    This tests the boundary condition where the reviewer keeps requesting
+    changes up to max_loops iterations. It verifies:
+    - run_review_loop returns False (max loops exceeded)
+    - Reviewer session is called max_loops times (3)
+    - Coder fix session is called max_loops-1 times (2)
+    - No fix is attempted on the last iteration
+
+    This specifically tests lines 92-97 in review.py:
+    - Line 92-93: Check if iteration >= max_loops
+    - Line 94-96: Log error about max iterations exceeded
+    - Line 97: Return False without attempting fix
+    """
+    # Get baseline commit
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    baseline_commit = result.stdout.strip()
+
+    # Track call counts
+    session_call_count = 0
+
+    def mock_session_side_effect(*_args, **_kwargs):
+        """Mock Claude sessions."""
+        nonlocal session_call_count
+        session_call_count += 1
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        return mock_result
+
+    # Mock reviewer and coder sessions
+    with patch("rasen.review.run_claude_session") as mock_session:
+        mock_session.side_effect = mock_session_side_effect
+
+        # Mock parse_events to always request changes from reviewer
+        # parse_events is called once per reviewer session with hardcoded string
+        # We need to return changes_requested each time
+        with patch("rasen.review.parse_events") as mock_parse:
+            # Always return changes_requested (simulates reviewer never satisfied)
+            mock_parse.return_value = [
+                Event(
+                    topic="review.changes_requested",
+                    payload="Please fix formatting",
+                )
+            ]
+
+            # Run review loop
+            result = run_review_loop(
+                test_config_with_review,
+                sample_subtask,
+                git_repo,
+                baseline_commit,
+            )
+
+            # Assertions
+            assert result is False, "Review loop should return False when max iterations exceeded"
+
+            # With max_loops=3:
+            # Iteration 1: reviewer (changes) → coder fix
+            # Iteration 2: reviewer (changes) → coder fix
+            # Iteration 3: reviewer (changes) → NO FIX (max reached)
+            # Total: 3 reviewer calls + 2 coder fix calls = 5 calls
+            assert mock_session.call_count == 5, (
+                f"Expected 5 calls (3 reviewer + 2 coder fix), got {mock_session.call_count}"
+            )
+
+            # Verify the sequence of calls
+            call_args_list = mock_session.call_args_list
+
+            # First reviewer (iteration 1)
+            assert "test-subtask-1" in call_args_list[0][0][0], "First call should be reviewer"
+            # First coder fix
+            assert "Fix review issues" in call_args_list[1][0][0], "Second call should be coder fix"
+            # Second reviewer (iteration 2)
+            assert "test-subtask-1" in call_args_list[2][0][0], "Third call should be reviewer"
+            # Second coder fix
+            assert "Fix review issues" in call_args_list[3][0][0], "Fourth call should be coder fix"
+            # Third reviewer (iteration 3, final - no fix after this)
+            assert "test-subtask-1" in call_args_list[4][0][0], (
+                "Fifth call should be reviewer (final iteration)"
+            )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

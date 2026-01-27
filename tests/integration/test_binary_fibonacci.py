@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -43,21 +44,19 @@ def binary_path(project_root: Path) -> Path:
         binary_mtime = binary.stat().st_mtime
         src_dir = project_root / "src" / "rasen"
 
-        newest_source = max(
-            (f.stat().st_mtime for f in src_dir.rglob("*.py")),
-            default=0
-        )
+        newest_source = max((f.stat().st_mtime for f in src_dir.rglob("*.py")), default=0)
 
         if newest_source <= binary_mtime:
             needs_rebuild = False
 
     if needs_rebuild:
-        print(f"\n🔨 Building binary...")
+        print("\n🔨 Building binary...")
         result = subprocess.run(
             [sys.executable, str(build_script)],
             cwd=project_root,
             capture_output=True,
             text=True,
+            check=False,
         )
 
         if result.returncode != 0:
@@ -83,7 +82,6 @@ def test_project(tmp_path: Path, binary_path: Path) -> Path:
     project_dir.mkdir()
 
     # Copy binary to test project
-    import shutil
     test_binary = project_dir / "rasen"
     shutil.copy2(binary_path, test_binary)
     test_binary.chmod(0o755)
@@ -158,6 +156,7 @@ def test_binary_version(binary_path: Path) -> None:
         [str(binary_path), "--version"],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0, "Binary --version failed"
@@ -170,6 +169,7 @@ def test_binary_help(binary_path: Path) -> None:
         [str(binary_path), "--help"],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0, "Binary --help failed"
@@ -188,6 +188,7 @@ def test_init_command(test_project: Path) -> None:
         cwd=test_project,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0, f"Init command failed:\n{result.stderr}"
@@ -235,6 +236,7 @@ def test_status_before_run(test_project: Path) -> None:
         cwd=test_project,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0, f"Status command failed:\n{result.stderr}"
@@ -243,7 +245,10 @@ def test_status_before_run(test_project: Path) -> None:
 
 @pytest.mark.skipif(
     os.environ.get("RASEN_INTEGRATION_TEST") != "1",
-    reason="Full integration test requires Claude Code CLI and API key. Set RASEN_INTEGRATION_TEST=1 to enable.",
+    reason=(
+        "Full integration test requires Claude Code CLI and API key. "
+        "Set RASEN_INTEGRATION_TEST=1 to enable."
+    ),
 )
 def test_run_fibonacci_full(test_project: Path) -> None:
     """Full integration test: Generate Fibonacci program.
@@ -277,6 +282,7 @@ def test_run_fibonacci_full(test_project: Path) -> None:
         capture_output=True,
         text=True,
         timeout=600,  # 10 minute timeout
+        check=False,
     )
 
     print("\n=== ORCHESTRATOR OUTPUT ===")
@@ -310,7 +316,7 @@ def test_run_fibonacci_full(test_project: Path) -> None:
         if "fibonacci" in content.lower() or "fib" in content.lower():
             found_fibonacci = True
             print(f"\n✓ Found Fibonacci implementation in {py_file.name}")
-            print(f"  First 20 lines:\n")
+            print("  First 20 lines:\n")
             print("\n".join(content.split("\n")[:20]))
             break
 
@@ -322,6 +328,7 @@ def test_run_fibonacci_full(test_project: Path) -> None:
         cwd=test_project,
         capture_output=True,
         text=True,
+        check=False,
     )
     commits = result.stdout.strip().split("\n")
     # Should have initial commit + at least one implementation commit
@@ -333,6 +340,7 @@ def test_run_fibonacci_full(test_project: Path) -> None:
         cwd=test_project,
         capture_output=True,
         text=True,
+        check=False,
     )
     print(f"\nFinal status:\n{result.stdout}")
 
@@ -347,12 +355,14 @@ def test_run_without_init_fails(test_project: Path) -> None:
         cwd=test_project,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     # Should fail with clear error
     assert result.returncode != 0, "Run should fail without init"
-    assert "Error" in result.stderr or "No task found" in result.stderr, \
+    assert "Error" in result.stderr or "No task found" in result.stderr, (
         "Should show clear error message"
+    )
 
 
 def test_init_twice_overwrites(test_project: Path) -> None:

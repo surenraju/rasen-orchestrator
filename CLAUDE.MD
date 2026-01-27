@@ -410,6 +410,292 @@ uv run pytest tests/integration/ -v --timeout=300
 uv run pytest -n auto
 ```
 
+### Testing Orchestration Flows
+
+**CRITICAL:** Unit tests alone are insufficient. Integration tests MUST verify the full orchestration loop to catch bugs that only appear when components interact.
+
+#### Bugs Missed by Unit Tests
+
+**Real example from this project:**
+
+1. **Bug:** Initializer agent never called when no plan exists
+   - **Why unit tests missed it:** loop.py had 0% test coverage
+   - **Why integration tests missed it:** Only tested CLI commands, not actual orchestration
+   - **Symptom:** `rasen run` completed immediately saying "All subtasks complete" without doing any work
+
+2. **Bug:** Prompt template path doubled (prompts/prompts/initializer.md)
+   - **Why unit tests missed it:** prompts.py tested template rendering, not path construction
+   - **Why integration tests missed it:** Tests passed template paths directly, not via orchestration
+   - **Symptom:** FileNotFoundError when running Initializer session
+
+#### Integration Test Requirements
+
+**MANDATORY for any orchestration logic:**
+
+```python
+def test_orchestration_flow_with_mocking():
+    """Test full orchestration loop with mocked Claude sessions.
+
+    CRITICAL TEST PATTERN:
+    1. Simulate empty state (no plan, no commits)
+    2. Mock Claude session to simulate agent behavior
+    3. Verify orchestration calls agents in correct order
+    4. Check that files are created and state is updated
+
+    This catches bugs where:
+    - Agents are skipped in the loop
+    - Paths are constructed incorrectly
+    - State transitions are wrong
+    - Files are written to wrong locations
+    """
+    # Mock Claude session
+    with patch("rasen.loop.run_claude_session") as mock_session:
+        # Simulate Initializer creating plan
+        def mock_initializer(*args, **kwargs):
+            plan = {
+                "task_name": "Test task",
+                "subtasks": [
+                    {"id": "task-1", "description": "First task",
+                     "status": "pending", "attempts": 0}
+                ]
+            }
+            plan_file = rasen_dir / "implementation_plan.json"
+            plan_file.write_text(json.dumps(plan))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        mock_session.side_effect = mock_initializer
+
+        # Run orchestration
+        loop = OrchestrationLoop(config, project_dir, "Test task")
+        loop.run()
+
+        # ASSERTIONS - These catch real bugs:
+        assert mock_session.called, "Claude session was never called!"
+        assert plan_file.exists(), "implementation_plan.json not created!"
+
+        # Verify prompt file was written with correct path
+        prompt_file = rasen_dir / "prompt_initializer.md"
+        assert prompt_file.exists(), "Prompt file not created!"
+
+        # Verify no path doubling (prompts/prompts/)
+        assert "prompts/prompts/" not in str(prompt_file)
+```
+
+#### Required Integration Tests
+
+**Every orchestration feature MUST have these tests:**
+
+1. **Empty State Test** - Verify behavior when starting fresh
+   ```python
+   def test_initializer_called_when_no_plan():
+       """Verify Initializer runs when no plan exists."""
+       # No plan file exists
+       loop = OrchestrationLoop(config, project_dir, task_description)
+       loop.run()
+
+       # Initializer must have been called
+       assert (rasen_dir / "implementation_plan.json").exists()
+       assert (rasen_dir / "prompt_initializer.md").exists()
+   ```
+
+2. **Path Construction Test** - Verify files created in correct locations
+   ```python
+   def test_prompt_paths_correct():
+       """Verify prompt templates loaded from correct paths."""
+       # Capture actual path used
+       actual_path = None
+       def capture_path(prompt_file, *args):
+           nonlocal actual_path
+           actual_path = prompt_file
+           return MagicMock(returncode=0)
+
+       with patch("rasen.loop.run_claude_session", side_effect=capture_path):
+           loop.run()
+
+       # Path must be project_dir/prompts/template.md
+       # NOT prompts/prompts/template.md
+       assert "prompts/prompts/" not in str(actual_path)
+       assert actual_path.exists()
+   ```
+
+3. **State Transition Test** - Verify loop progresses through states
+   ```python
+   def test_loop_state_transitions():
+       """Verify loop transitions from init → coder → reviewer → qa."""
+       states_seen = []
+
+       def track_state(*args, **kwargs):
+           # Capture which agent is running
+           prompt_file = args[0]
+           if "initializer" in str(prompt_file):
+               states_seen.append("initializer")
+           elif "coder" in str(prompt_file):
+               states_seen.append("coder")
+           # etc...
+           return MagicMock(returncode=0)
+
+       with patch("rasen.loop.run_claude_session", side_effect=track_state):
+           loop.run()
+
+       # Must see initializer first, then coder
+       assert states_seen[0] == "initializer"
+       assert "coder" in states_seen
+   ```
+
+4. **File Creation Test** - Verify all expected files are created
+   ```python
+   def test_creates_all_runtime_files():
+       """Verify loop creates status.json, plan, prompts."""
+       loop.run()
+
+       # These files MUST exist after orchestration
+       assert (rasen_dir / "status.json").exists()
+       assert (rasen_dir / "implementation_plan.json").exists()
+       assert (rasen_dir / "prompt_initializer.md").exists()
+   ```
+
+5. **Error Handling Test** - Verify graceful failure
+   ```python
+   def test_handles_session_failure():
+       """Verify loop handles Claude session failures gracefully."""
+       def mock_failure(*args, **kwargs):
+           return MagicMock(returncode=1)  # Simulate failure
+
+       with patch("rasen.loop.run_claude_session", side_effect=mock_failure):
+           result = loop.run()
+
+       # Must return error status, not crash
+       assert result == TerminationReason.ERROR
+       assert (rasen_dir / "status.json").exists()
+   ```
+
+#### Test Organization
+
+```
+tests/integration/
+├── test_orchestration_flow.py    # Core loop tests (MUST EXIST)
+│   ├── test_initializer_is_called_when_no_plan
+│   ├── test_prompt_paths_are_correct
+│   ├── test_loop_state_transitions
+│   ├── test_creates_all_runtime_files
+│   └── test_handles_session_failure
+├── test_binary_fibonacci.py       # Binary + CLI tests
+├── test_review_loop.py             # Coder ↔ Reviewer tests
+├── test_qa_loop.py                 # Coder ↔ QA tests
+└── test_full_api.py                # Real API tests (expensive, skip by default)
+```
+
+#### Mocking Guidelines
+
+**DO use mocking for:**
+- Claude API calls (expensive, slow, requires API key)
+- File system operations (when testing logic, not I/O)
+- Network requests
+- Time-dependent operations (for test speed)
+
+**DO NOT mock:**
+- Core orchestration logic (defeats the purpose of integration tests)
+- Path construction (source of bugs)
+- JSON serialization (source of bugs)
+- State transitions (source of bugs)
+
+**Mocking pattern:**
+```python
+from unittest.mock import MagicMock, patch
+
+# Good: Mock external call, test our logic
+with patch("rasen.loop.run_claude_session") as mock:
+    mock.return_value = MagicMock(returncode=0)
+    loop.run()
+    assert mock.called  # Verify our code called it
+
+# Bad: Mock everything, test nothing
+with patch("rasen.loop.OrchestrationLoop.run") as mock:
+    mock.return_value = TerminationReason.COMPLETE
+    result = loop.run()
+    assert result == TerminationReason.COMPLETE  # Useless test
+```
+
+#### Coverage Requirements
+
+**Minimum test coverage by module:**
+- `loop.py` - 80% (core orchestration MUST be tested)
+- `review.py` - 75% (Coder ↔ Reviewer loop)
+- `qa.py` - 75% (Coder ↔ QA loop)
+- `stores/*.py` - 90% (state management is critical)
+- `prompts.py` - 90% (template rendering must work)
+- Overall project - 70%
+
+**Check coverage:**
+```bash
+# Generate coverage report
+uv run pytest tests/ --cov=rasen --cov-report=html
+
+# View in browser
+open htmlcov/index.html
+
+# Fail if coverage below threshold
+uv run pytest tests/ --cov=rasen --cov-fail-under=70
+```
+
+#### Pre-Commit Checklist for Orchestration Changes
+
+**If you modify loop.py, review.py, qa.py, or prompts.py:**
+
+- [ ] Run integration tests: `uv run pytest tests/integration/test_orchestration_flow.py -v`
+- [ ] Check coverage: `uv run pytest --cov=rasen --cov-report=term-missing`
+- [ ] Test with mock: Verify mocked Claude sessions work
+- [ ] Test paths: Verify prompt files created in correct locations
+- [ ] Test states: Verify loop progresses through expected states
+- [ ] Test errors: Verify graceful handling of failures
+- [ ] Test real binary (optional): Build and run `rasen init && rasen run` manually
+
+#### Red Flags: When Tests Are Insufficient
+
+**Warning signs that your tests aren't catching bugs:**
+
+1. **Coverage report shows 0% for loop.py**
+   - Add integration tests immediately
+   - Unit tests alone cannot catch orchestration bugs
+
+2. **Tests only mock external calls, not orchestration**
+   - Good: `patch("rasen.loop.run_claude_session")`
+   - Bad: `patch("rasen.loop.OrchestrationLoop.run")`
+
+3. **No tests verify file creation**
+   - Tests must check that `.rasen/` files are created
+   - Tests must verify file contents are correct
+
+4. **No tests verify agent execution order**
+   - Tests must verify Initializer runs first
+   - Tests must verify Reviewer runs after Coder
+   - Tests must verify QA runs after all subtasks
+
+5. **Tests pass but binary doesn't work**
+   - Add `tests/integration/test_binary_*.py` that actually runs the binary
+   - Verify binary can init task and run orchestration
+
+**Example of insufficient test:**
+```python
+# BAD: Only tests that function exists
+def test_run_exists():
+    loop = OrchestrationLoop(config, project_dir, task)
+    assert hasattr(loop, 'run')
+
+# GOOD: Tests that function works end-to-end
+def test_run_creates_plan_and_executes():
+    with patch("rasen.loop.run_claude_session") as mock:
+        mock.return_value = MagicMock(returncode=0)
+        loop = OrchestrationLoop(config, project_dir, task)
+        result = loop.run()
+
+    assert mock.called
+    assert (rasen_dir / "implementation_plan.json").exists()
+    assert result == TerminationReason.COMPLETE
+```
+
 ---
 
 ## Project Structure

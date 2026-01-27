@@ -1,24 +1,32 @@
+# ============================================================================
 # Python
+# ============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 
-# Distribution / packaging
+# ============================================================================
+# Distribution / Packaging
+# ============================================================================
 build/
 dist/
 *.egg-info/
 *.egg
 MANIFEST
 
-# Virtual environments
+# ============================================================================
+# Virtual Environments
+# ============================================================================
 .venv/
 venv/
 ENV/
 env/
 
+# ============================================================================
 # Testing
+# ============================================================================
 .pytest_cache/
 .coverage
 coverage.json
@@ -26,59 +34,101 @@ htmlcov/
 .tox/
 coverage.xml
 *.cover
+test-output/
+test_results/
 
-# Type checking
+# ============================================================================
+# Type Checking & Linting
+# ============================================================================
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# Linting
 .ruff_cache/
 
-# IDEs
+# ============================================================================
+# IDEs & Editors
+# ============================================================================
 .vscode/
 .idea/
 .claude/
+*.sublime-project
+*.sublime-workspace
 *.swp
 *.swo
 *~
 
-# OS
+# ============================================================================
+# Operating Systems
+# ============================================================================
+# macOS
 .DS_Store
-Thumbs.db
+.AppleDouble
+.LSOverride
+._*
 
-# Project-specific
-CLAUDE.md
-CLAUDE.MD
-_bmad*
-docs/
-integration-tests/
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+.directory
+
+# ============================================================================
+# Environment Variables
+# ============================================================================
+.env
+.env.local
+.env.*.local
+
+# ============================================================================
+# Logs
+# ============================================================================
+*.log
+rasen.log
+orchestration.log
+
+# ============================================================================
+# RASEN Project Specific
+# ============================================================================
+# Runtime state files
+*.pid
+status.json
+QA_ESCALATION.md
+HUMAN_INTERVENTION
+
+# Local per-project RASEN state (created by rasen init)
+# Note: Keep integration-tests/.rasen/ ignored for testing
+*/.rasen/
 .rasen/
 
-# Reference implementations (cloned repos)
+# PyInstaller build artifacts
+*.spec.bak
+
+# Reference implementations (cloned repos for research)
 Auto-Claude/
 ralph-orchestrator/
 
-# Environment variables
-.env
-.env.local
+# BMAD agent artifacts
+_bmad*/
+.bmad/
 
-# Logs
-*.log
-rasen.log
+# Temporary test directories
+/tmp/
+scratch/
+sandbox/
 
-# Runtime state
-*.pid
-status.json
+# ============================================================================
+# Package Managers
+# ============================================================================
+# Keep uv.lock tracked, ignore others
+poetry.lock
+Pipfile.lock
 
-# PyInstaller
-*.spec.bak
-
-# Backup files
+# ============================================================================
+# Miscellaneous
+# ============================================================================
 *.bak
 *.tmp
-*~
-
-# Git patches
 *.patch
 *.diff

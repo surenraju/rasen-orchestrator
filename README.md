@@ -155,6 +155,16 @@ rasen resume                     # Resume after interruption
 rasen --help                     # Show all commands
 ```
 
+## Build
+
+```bash
+# Build standalone binary
+python build.py
+
+# Binary created at: dist/rasen
+./dist/rasen --version
+```
+
 ## Development
 
 ```bash
@@ -163,9 +173,6 @@ uv run ruff format .      # Format
 uv run ruff check .       # Lint
 uv run mypy src/          # Type check
 uv run pytest             # Test
-
-# Build binary
-python build.py
 ```
 
 ## License

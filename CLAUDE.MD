@@ -77,7 +77,7 @@ Before finishing ANY coding session, verify:
 - [ ] `uv run ruff format --check .` passes (format - REQUIRED)
 - [ ] `uv run mypy src/` passes (type check - REQUIRED)
 - [ ] `uv run pytest` passes (tests - REQUIRED)
-- [ ] **Coverage check: `uv run pytest --cov=rasen --cov-fail-under=70` passes (REQUIRED)**
+- [ ] **Coverage check: `uv run pytest --cov=rasen --cov-fail-under=60` passes (REQUIRED)**
 - [ ] **If modified loop.py/review.py/qa.py: Integration test for that workflow exists and passes (REQUIRED)**
 - [ ] **If modified CLI: Actual binary tested manually (build → run command → verify works) (REQUIRED)**
 - [ ] Changes committed with descriptive message

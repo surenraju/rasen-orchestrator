@@ -1,70 +1,76 @@
 {
-  "task_name": "Enhance loop.py to use get_recovery_hints() for richer recovery context",
+  "task_name": "Add integration tests for review.py to increase coverage to 75%",
+  "task_description": "Create tests/integration/test_review_loop.py that tests the Coder ↔ Reviewer validation loop. Mock run_claude_session to simulate reviewer behavior. Target: 75% coverage on review.py. Follow CLAUDE.md testing requirements - write workflow tests first, no mocking of core logic.",
   "subtasks": [
     {
-      "id": "subtask-1",
-      "description": "Update loop.py lines 291-298 to call get_recovery_hints() instead of get_failed_approaches() and store result in recovery_hints variable",
+      "id": "review-test-1",
+      "description": "Create test_review_loop.py with fixtures and basic structure. Set up test fixtures for git repo, config with review enabled, sample subtask. Create mock_reviewer_approved and mock_reviewer_changes_requested fixtures following test_orchestration_flow.py patterns.",
       "status": "pending",
       "attempts": 0,
       "last_approach": null
     },
     {
-      "id": "subtask-2",
-      "description": "Replace failed_section formatting logic with recovery hints formatting that shows attempt count, success/failure status, and warnings (matching Auto-Claude pattern from prompt_generator.py:196-207)",
+      "id": "review-test-2",
+      "description": "Write test_review_loop_approves_on_first_try. Test happy path where reviewer approves immediately. Mock run_claude_session to return review.approved event. Verify run_review_loop returns True, reviewer session called once, no coder fix sessions called. Target lines 60-86 in review.py.",
       "status": "pending",
       "attempts": 0,
       "last_approach": null
     },
     {
-      "id": "subtask-3",
-      "description": "Update the prompt template variable name from failed_section to recovery_section or similar to reflect the richer context being provided",
+      "id": "review-test-3",
+      "description": "Write test_review_loop_requests_changes_then_approves. Test review iteration loop. Mock first call to request changes, second call to approve. Verify coder fix session called with feedback, reviewer called twice, final result is True. Target lines 87-103 in review.py.",
       "status": "pending",
       "attempts": 0,
       "last_approach": null
     },
     {
-      "id": "subtask-4",
-      "description": "Add unit tests for the new recovery hints formatting in loop.py to verify attempt count, status display, and warnings are formatted correctly",
+      "id": "review-test-4",
+      "description": "Write test_review_loop_exceeds_max_iterations. Test max_loops boundary. Mock reviewer to always request changes. Verify loop stops at max_loops (3), returns False, coder fix called max_loops-1 times (2). Target lines 92-97 in review.py.",
       "status": "pending",
       "attempts": 0,
       "last_approach": null
     },
     {
-      "id": "subtask-5",
-      "description": "Update integration tests (if any) to verify get_recovery_hints() is called instead of get_failed_approaches() during orchestration flow",
+      "id": "review-test-5",
+      "description": "Write test_reviewer_session_parses_events. Test _run_reviewer_session event parsing. Mock run_claude_session with different event topics (review.approved, review.changes_requested). Verify ReviewResult has correct approved/feedback values. Target lines 125-167 in review.py.",
       "status": "pending",
       "attempts": 0,
       "last_approach": null
     },
     {
-      "id": "subtask-6",
-      "description": "Run full quality check suite (ruff format, ruff check, mypy, pytest with coverage) and fix any issues",
+      "id": "review-test-6",
+      "description": "Write test_reviewer_session_handles_failure. Test reviewer session error handling. Mock run_claude_session to raise SessionError. Verify _run_reviewer_session returns approved=True (fail-open), logs warning. Target lines 148-151 in review.py.",
       "status": "pending",
       "attempts": 0,
       "last_approach": null
     },
     {
-      "id": "subtask-7",
-      "description": "Verify coverage requirements: ensure loop.py maintains >= 80% coverage, update tests if needed",
+      "id": "review-test-7",
+      "description": "Write test_coder_fix_session_execution. Test _run_coder_fix_session. Mock run_claude_session successfully. Verify coder session called with correct prompt containing feedback. Target lines 184-202 in review.py.",
       "status": "pending",
       "attempts": 0,
       "last_approach": null
     },
     {
-      "id": "subtask-8",
-      "description": "Test the change manually by running a sample orchestration task to verify recovery hints appear correctly in agent prompts",
+      "id": "review-test-8",
+      "description": "Write test_review_loop_disabled. Test early return when review disabled. Set config.review.enabled=False. Verify run_review_loop returns True immediately, no sessions called. Target lines 60-62 in review.py.",
       "status": "pending",
       "attempts": 0,
       "last_approach": null
     },
     {
-      "id": "subtask-9",
-      "description": "Update claude-progress.txt with implementation notes and commit all changes with descriptive message",
+      "id": "review-test-9",
+      "description": "Write test_review_loop_updates_status. Test status file updates during review loop. Mock reviewer to approve on second try. Verify status.json updated with 'Review 1/3' and 'Review 2/3' phases. Target lines 69-76 in review.py.",
+      "status": "pending",
+      "attempts": 0,
+      "last_approach": null
+    },
+    {
+      "id": "review-test-10",
+      "description": "Run coverage check and verify 75% target met. Execute 'uv run pytest --cov=rasen.review --cov-fail-under=75 tests/integration/test_review_loop.py'. Fix any gaps if coverage below 75%. Run full test suite to ensure no regressions.",
       "status": "pending",
       "attempts": 0,
       "last_approach": null
     }
-  ],
-  "created_at": "2026-01-28T08:32:00Z",
-  "updated_at": "2026-01-28T08:32:00Z"
+  ]
 }

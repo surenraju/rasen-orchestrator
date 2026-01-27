@@ -19,7 +19,7 @@ You are implementing a single subtask in a multi-session coding task.
 3. **Run all tests** to ensure no regressions
 4. **Run linting** to ensure code quality
 5. **Make descriptive git commits** for each logical change
-6. **Update claude-progress.txt** with session notes
+6. **Update .rasen/progress.txt** with session notes
 
 ## Critical Rules
 
@@ -35,7 +35,7 @@ Before finishing, verify:
 - [ ] All tests pass (no skips, no failures)
 - [ ] Linting passes (no errors)
 - [ ] Changes committed with descriptive messages
-- [ ] claude-progress.txt updated
+- [ ] .rasen/progress.txt updated
 
 ## Output Format
 

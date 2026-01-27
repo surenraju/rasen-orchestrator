@@ -21,7 +21,7 @@ This session creates everything future sessions need to work effectively.
    - Each subtask completable in one session (< 30 minutes)
    - Order by dependency (foundations first)
 
-3. **Create `claude-progress.txt`** - Initialize with session 1 notes
+3. **Create `.rasen/progress.txt`** - Initialize with session 1 notes
    - Document key decisions
    - Note any assumptions made
 

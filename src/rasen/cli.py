@@ -154,10 +154,11 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
         config.qa.enabled = False
 
     project_dir = Path(config.project.root)
+    rasen_dir = project_dir / ".rasen"
     pid_file = Path(config.background.pid_file)
 
     # Setup logging - always log to file
-    log_file = Path(config.background.log_file) if background else project_dir / "orchestration.log"
+    log_file = Path(config.background.log_file) if background else rasen_dir / "orchestration.log"
 
     # Check if already running
     from rasen.daemon import get_daemon_status  # noqa: PLC0415
@@ -379,7 +380,7 @@ def status(ctx: click.Context) -> None:
     click.echo("╠════════════════════════════════════════════════════════════════════╣")
 
     # Recent log entries (last 5 lines)
-    log_file = rasen_dir.parent / "orchestration.log"
+    log_file = rasen_dir / "orchestration.log"
     if log_file.exists():
         try:
             result = subprocess.run(
@@ -414,9 +415,10 @@ def logs(ctx: click.Context, follow: bool, lines: int) -> None:
 
     config = ctx.obj["config"]
     project_dir = Path.cwd()
+    rasen_dir = project_dir / ".rasen"
 
-    # Check for foreground log first (orchestration.log in current dir)
-    foreground_log = project_dir / "orchestration.log"
+    # Check for foreground log first (orchestration.log in .rasen/)
+    foreground_log = rasen_dir / "orchestration.log"
     daemon_log = Path(config.background.log_file)
 
     # Determine which log file to use
@@ -433,7 +435,7 @@ def logs(ctx: click.Context, follow: bool, lines: int) -> None:
     if not log_file:
         click.echo("No log file found.")
         click.echo("Logs are created when you run:")
-        click.echo("  - Foreground: 'rasen run' (creates orchestration.log)")
+        click.echo("  - Foreground: 'rasen run' (creates .rasen/orchestration.log)")
         click.echo("  - Background: 'rasen run --background' (creates .rasen/rasen.log)")
         return
 

@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+coverage.xml
+*.cover
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Linting
+.ruff_cache/
+
+# IDEs
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+CLAUDE.md
+_bmad*
+docs/
+integration-tests/
+.rasen/
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+rasen.log
+
+# Runtime state
+*.pid
+status.json
+
+# PyInstaller
+*.spec.bak
+
+# Backup files
+*.bak
+*.tmp
+*~
+
+# Git patches
+*.patch
+*.diff

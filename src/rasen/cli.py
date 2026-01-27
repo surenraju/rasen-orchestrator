@@ -273,7 +273,7 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
 def status(ctx: click.Context) -> None:
     """Show current status with comprehensive details."""
     import subprocess  # noqa: PLC0415
-    from datetime import datetime  # noqa: PLC0415
+    from datetime import UTC, datetime  # noqa: PLC0415
 
     from rasen.stores.plan_store import PlanStore  # noqa: PLC0415
     from rasen.stores.status_store import StatusStore  # noqa: PLC0415

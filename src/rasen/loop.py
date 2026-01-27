@@ -58,7 +58,7 @@ class OrchestrationLoop:
         self.no_commit_counts: dict[str, int] = {}
         self.baseline_commit = self._get_commit_hash()  # Capture at start
 
-    def run(self) -> TerminationReason:
+    def run(self) -> TerminationReason:  # noqa: PLR0911
         """Run the orchestration loop until completion or termination.
 
         Returns:
@@ -87,6 +87,37 @@ class OrchestrationLoop:
                     return TerminationReason.USER_CANCELLED
 
                 self.state.iteration += 1
+
+                # Session 1: Check if plan exists, if not run Initializer
+                plan = self.plan_store.load()
+                if not plan:
+                    logger.info("No plan found, running Initializer agent (Session 1)")
+
+                    if not self.task_description:
+                        logger.error("No task description provided for initialization")
+                        self.status_store.mark_failed("No task description")
+                        return TerminationReason.ERROR
+
+                    # Run Initializer agent to create plan
+                    try:
+                        session_result = self._run_initializer_session(self.task_description)
+
+                        # Reload plan after Initializer runs
+                        plan = self.plan_store.load()
+                        if not plan:
+                            logger.error("Initializer failed to create implementation plan")
+                            self.status_store.mark_failed("Plan creation failed")
+                            return TerminationReason.ERROR
+
+                        logger.info(f"Plan created with {len(plan.subtasks)} subtasks")
+
+                        # Delay before starting subtasks
+                        time.sleep(self.config.orchestrator.session_delay_seconds)
+
+                    except SessionError as e:
+                        logger.error(f"Initializer session failed: {e}")
+                        self.status_store.mark_failed("Initializer failed")
+                        return TerminationReason.ERROR
 
                 # Get next subtask
                 subtask = self.plan_store.get_next_subtask()
@@ -272,6 +303,55 @@ class OrchestrationLoop:
             status=status,
             output="",  # Would capture actual output
             commits_made=0,  # Will be set by caller
+            events=events,
+            duration_seconds=duration,
+        )
+
+    def _run_initializer_session(self, task_description: str) -> SessionResult:
+        """Run initializer session to create implementation plan.
+
+        Args:
+            task_description: The task to implement
+
+        Returns:
+            SessionResult with status and events
+        """
+        logger.info(f"Running Initializer for task: {task_description}")
+
+        # Create initializer prompt
+        prompt = create_agent_prompt(
+            "initializer",
+            Path("prompts"),
+            task_description=task_description,
+        )
+
+        # Write prompt to temp file
+        prompt_file = self.rasen_dir / "prompt_initializer.md"
+        prompt_file.write_text(prompt)
+
+        # Run session
+        start_time = time.time()
+        try:
+            result = run_claude_session(
+                prompt_file,
+                self.project_dir,
+                self.config.orchestrator.session_timeout_seconds,
+            )
+        finally:
+            duration = time.time() - start_time
+
+        # Parse output
+        if result.returncode == 0:
+            events = [parse_events('<event topic="init.done">Plan created</event>')[0]]
+            status = SessionStatus.COMPLETE
+        else:
+            events = []
+            status = SessionStatus.FAILED
+
+        return SessionResult(
+            status=status,
+            output="",
+            commits_made=0,
             events=events,
             duration_seconds=duration,
         )

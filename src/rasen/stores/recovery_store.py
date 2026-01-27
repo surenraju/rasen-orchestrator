@@ -140,6 +140,38 @@ class RecoveryStore:
         recent = subtask_records[-threshold:]
         return all(not r.success for r in recent)
 
+    def get_recovery_hints(self, subtask_id: str) -> list[str]:
+        """Get hints for recovery based on previous attempts.
+
+        Args:
+            subtask_id: ID of subtask
+
+        Returns:
+            List of hint strings formatted for prompt injection
+        """
+        history = self._load_history()
+        subtask_records = [r for r in history.records if r.subtask_id == subtask_id]
+
+        if not subtask_records:
+            return ["This is the first attempt at this subtask"]
+
+        hints = [f"Previous attempts: {len(subtask_records)}"]
+
+        # Show last 3 attempts with approach + success/fail
+        recent_attempts = subtask_records[-3:]
+        for i, record in enumerate(recent_attempts, 1):
+            status = "SUCCESS" if record.success else "FAILED"
+            hints.append(f"Attempt {i}: {record.approach} - {status}")
+
+        # Add warning to try different approach if multiple attempts
+        if len(subtask_records) >= 2:
+            hints.append("\n⚠️  IMPORTANT: Try a DIFFERENT approach than previous attempts")
+            hints.append(
+                "Consider: different library, different pattern, or simpler implementation"
+            )
+
+        return hints
+
     def _load_history(self) -> AttemptHistory:
         """Load attempt history from disk."""
         if not self.history_path.exists():

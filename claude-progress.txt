@@ -240,3 +240,51 @@ Subtask 3: Fix review.py to use recovery hints
 - Inject hints into coder prompt during review fix iterations
 
 ---
+
+Session 4 - New Task Initialization (2026-01-28)
+Task: Enhance loop.py to use get_recovery_hints() for richer recovery context
+
+## Task Overview
+
+This task focuses on updating lines 291-298 in src/rasen/loop.py to format recovery hints with attempt count, success/failure status, and warnings to try different approaches. The goal is to match Auto-Claude's implementation pattern from Auto-Claude/apps/backend/prompts_pkg/prompt_generator.py lines 196-207.
+
+## Context Analysis
+
+- `get_recovery_hints()` was already implemented in RecoveryStore (Session 2)
+- Current implementation in loop.py calls get_failed_approaches() which returns simple list of failed approaches
+- Auto-Claude pattern shows: attempt count, success/failure status, and warnings
+- Need to switch from get_failed_approaches() to get_recovery_hints() for richer context
+- The recovery hints are already formatted properly by RecoveryStore, just need to use them
+
+## Implementation Plan Created
+
+Created 9 subtasks to systematically implement this enhancement:
+
+1. **Subtask-1**: Update loop.py to call get_recovery_hints() instead of get_failed_approaches()
+2. **Subtask-2**: Replace failed_section formatting with recovery hints formatting
+3. **Subtask-3**: Update prompt template variable name from failed_section to recovery_section
+4. **Subtask-4**: Add unit tests for recovery hints formatting
+5. **Subtask-5**: Update integration tests to verify get_recovery_hints() is called
+6. **Subtask-6**: Run full quality check suite and fix issues
+7. **Subtask-7**: Verify coverage requirements (loop.py >= 80%)
+8. **Subtask-8**: Manual testing of orchestration with recovery hints
+9. **Subtask-9**: Update progress file and commit changes
+
+## Key Decisions
+
+- Keep variable naming consistent with the richer context (recovery_section vs failed_section)
+- Follow Auto-Claude's proven pattern for formatting recovery hints
+- Ensure comprehensive test coverage (loop.py requires >= 80%)
+- Manual testing required to verify prompts render correctly
+
+## Dependencies
+
+- RecoveryStore.get_recovery_hints() already implemented (no changes needed)
+- prompts.py and template rendering works as-is (no changes needed)
+- Main focus is loop.py changes and corresponding tests
+
+## Next Steps (Session 5)
+
+Start with subtask-1: Update loop.py to call get_recovery_hints()
+
+---

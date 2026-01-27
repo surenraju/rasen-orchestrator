@@ -88,3 +88,63 @@ Start with subtask-1: Implement get_recovery_hints() method in RecoveryStore.
 This is the foundation that other subtasks will build upon.
 
 ---
+
+Session 2 - Subtask 1 Implementation (2026-01-28)
+Task: Add get_recovery_hints() method to RecoveryStore
+
+## Implementation Summary
+
+Successfully implemented the get_recovery_hints() method in RecoveryStore following the Auto-Claude pattern.
+
+## Changes Made
+
+1. **Added get_recovery_hints() method** (src/rasen/stores/recovery_store.py:144-173)
+   - Returns list of hint strings formatted for prompt injection
+   - Shows "This is the first attempt" for new subtasks
+   - Displays last 3 attempts with approach + SUCCESS/FAILED status
+   - Adds ⚠️ warning after 2+ attempts to try different approach
+   - Pattern matches Auto-Claude's recovery.py:495-531
+
+2. **Comprehensive Test Suite** (tests/stores/test_recovery_store.py)
+   - Created 12 tests covering all scenarios:
+     - First attempt (no history)
+     - Single attempt (no warning yet)
+     - Multiple attempts (shows warning)
+     - Mixed success/failure
+     - Last 3 attempts only (when >3 exist)
+     - Per-subtask isolation
+     - Record attempt creates history
+     - Failed approaches retrieval
+     - Attempt counting
+     - Thrashing detection
+     - Good commit tracking
+   - All tests pass ✓
+   - 98% coverage on recovery_store.py (exceeds 75% requirement)
+
+## Quality Verification
+
+✓ All tests pass (12/12)
+✓ 98% test coverage on recovery_store.py
+✓ ruff format passes
+✓ ruff check passes
+✓ mypy passes
+✓ No regressions in existing tests (144 passed)
+✓ Commit created with descriptive message
+
+## Technical Notes
+
+The implementation differs slightly from Auto-Claude:
+- Auto-Claude uses dict-based storage with "attempts" array
+- RASEN uses Pydantic models with AttemptRecord
+- Both provide identical functionality
+- RASEN's approach is more type-safe with mypy validation
+
+## Next Steps
+
+Subtask 2: Update loop.py to call record_attempt() after sessions
+- Need to integrate this method into the orchestration loop
+- Call after each _run_session() completes
+- Extract approach from subtask.description or last_approach
+- Determine success from session_result.status
+
+---

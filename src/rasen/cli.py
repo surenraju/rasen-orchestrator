@@ -27,7 +27,7 @@ def main(ctx: click.Context) -> None:
 @click.option("--task", "-t", required=True, help="Task description")
 @click.pass_context
 def init(ctx: click.Context, task: str) -> None:
-    """Initialize a new task."""
+    """Initialize a new task with config and customizable prompts."""
     config = ctx.obj["config"]
 
     click.echo(f"Initializing task: {task}")
@@ -41,6 +41,68 @@ def init(ctx: click.Context, task: str) -> None:
     # Save task description
     task_file = rasen_dir / "task.txt"
     task_file.write_text(task.strip())
+
+    # Copy agent prompts to .rasen/prompts/ for customization
+    prompts_dir = rasen_dir / "prompts"
+    prompts_dir.mkdir(exist_ok=True)
+
+    from importlib.resources import files  # noqa: PLC0415
+
+    prompt_templates = ["initializer.md", "coder.md", "reviewer.md", "qa.md"]
+    for template_name in prompt_templates:
+        bundled_prompt = files("rasen").joinpath("prompts").joinpath(template_name)
+        local_prompt = prompts_dir / template_name
+
+        # Copy if not exists (don't overwrite user customizations)
+        if not local_prompt.exists():
+            if hasattr(bundled_prompt, "read_text"):
+                content = bundled_prompt.read_text(encoding="utf-8")
+            else:
+                content = Path(str(bundled_prompt)).read_text(encoding="utf-8")
+            local_prompt.write_text(content)
+
+    # Create rasen-config.yml with default settings
+    config_file = rasen_dir / "rasen-config.yml"
+    if not config_file.exists():
+        config_template = """# RASEN Configuration
+# Customize agent prompts in .rasen/prompts/ directory
+
+# Agent settings
+agents:
+  initializer:
+    prompt: prompts/initializer.md
+    read_only: false
+  coder:
+    prompt: prompts/coder.md
+    read_only: false
+  reviewer:
+    prompt: prompts/reviewer.md
+    read_only: true  # Reviewer cannot modify files
+  qa:
+    prompt: prompts/qa.md
+    read_only: true  # QA cannot modify files
+
+# Session settings
+session:
+  timeout_seconds: 1800  # 30 minutes
+  max_iterations: 100
+
+# Review loop settings
+review:
+  enabled: true
+  max_iterations: 3
+
+# QA loop settings
+qa:
+  enabled: true
+  max_iterations: 50
+
+# Stall detection
+stall:
+  max_no_commit_sessions: 3
+  max_consecutive_failures: 5
+"""
+        config_file.write_text(config_template)
 
     # Initialize status file
     import os  # noqa: PLC0415
@@ -62,8 +124,13 @@ def init(ctx: click.Context, task: str) -> None:
     )
 
     click.echo("\n✅ Task initialized")
-    click.echo(f"   Task description saved to: {task_file}\n   State directory: {rasen_dir}\n")
-    click.echo("Run 'rasen run' to start the orchestration loop")
+    click.echo(f"   Task: {task_file}")
+    click.echo(f"   Config: {config_file}")
+    click.echo(f"   Prompts: {prompts_dir}/")
+    click.echo(f"   State: {rasen_dir}/\n")
+    click.echo("📝 Customize agent prompts in .rasen/prompts/ before running")
+    click.echo("⚙️  Adjust settings in .rasen/rasen-config.yml")
+    click.echo("\nRun 'rasen run' to start the orchestration loop")
 
 
 @main.command()

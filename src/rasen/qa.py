@@ -221,6 +221,7 @@ def _run_qa_session(
     # Render QA prompt
     prompt = create_agent_prompt(
         "qa",
+        project_dir=project_dir,
         task_description=task_description,
         implementation_plan=plan_summary,
         full_git_diff=full_diff,
@@ -278,6 +279,7 @@ def _run_coder_qa_fix_session(
     # Render coder prompt with QA feedback
     prompt = create_agent_prompt(
         "coder",
+        project_dir=project_dir,
         subtask_id="qa-fix",
         subtask_description=f"Fix QA issues:\n{issues_text}",
         attempt_number="qa-fix",

@@ -9,11 +9,16 @@ from rasen.claude_runner import get_agent_config
 from rasen.exceptions import ConfigurationError
 
 
-def get_template_path(template_name: str) -> Path:
-    """Get path to a bundled prompt template.
+def get_template_path(template_name: str, project_dir: Path | None = None) -> Path:
+    """Get path to a prompt template (local or bundled).
+
+    Priority order:
+    1. Local customized prompts in .rasen/prompts/ (if project_dir provided)
+    2. Bundled prompts in package resources
 
     Args:
         template_name: Name of template file (e.g., "prompts/initializer.md")
+        project_dir: Optional project directory to check for local prompts
 
     Returns:
         Path to template file
@@ -21,14 +26,19 @@ def get_template_path(template_name: str) -> Path:
     Raises:
         ConfigurationError: If template doesn't exist
     """
-    # Load from package resources
-    # templates are in src/rasen/prompts/
+    # Extract just the filename (remove "prompts/" prefix if present)
+    filename = template_name.split("/")[-1]
+
+    # Check for local customized prompts first
+    if project_dir:
+        local_prompt = project_dir / ".rasen" / "prompts" / filename
+        if local_prompt.exists():
+            return local_prompt
+
+    # Fall back to bundled prompts
     try:
         # Get the prompts package
         prompts_package = files("rasen").joinpath("prompts")
-
-        # Extract just the filename (remove "prompts/" prefix if present)
-        filename = template_name.split("/")[-1]
 
         # Get template file reference
         template_file = prompts_package.joinpath(filename)
@@ -45,7 +55,7 @@ def get_template_path(template_name: str) -> Path:
     except (FileNotFoundError, KeyError) as e:
         raise ConfigurationError(
             f"Prompt template not found: {template_name}. "
-            "Ensure prompts are bundled with the package."
+            "Run 'rasen init' to create default prompts."
         ) from e
 
 
@@ -74,12 +84,14 @@ def render_prompt(
 
 def create_agent_prompt(
     agent_type: str,
+    project_dir: Path | None = None,
     **variables: str,
 ) -> str:
     """Create a prompt for a specific agent type.
 
     Args:
         agent_type: Type of agent (initializer, coder, reviewer, qa)
+        project_dir: Optional project directory to check for customized prompts
         **variables: Variables to substitute in template
 
     Returns:
@@ -91,8 +103,8 @@ def create_agent_prompt(
     config = get_agent_config(agent_type)
     template_name = config["prompt_template"]
 
-    # Get template from package resources
-    template_ref = get_template_path(template_name)
+    # Get template (local or bundled)
+    template_ref = get_template_path(template_name, project_dir=project_dir)
 
     # Read template content
     # Handle both Path and Traversable types

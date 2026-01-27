@@ -129,7 +129,6 @@ def run_qa_loop(
         logger.info("QA loop disabled, skipping")
         return True
 
-    rasen_dir = project_dir / ".rasen"
     max_iterations = config.qa.max_iterations
     history = QAHistory()
 
@@ -139,9 +138,7 @@ def run_qa_loop(
         logger.info(f"QA iteration {iteration}/{max_iterations}")
 
         # Run QA session (read-only)
-        qa_result = _run_qa_session(
-            config, plan, task_description, project_dir, baseline_commit, rasen_dir
-        )
+        qa_result = _run_qa_session(config, plan, task_description, project_dir, baseline_commit)
 
         history.record(qa_result)
 
@@ -172,7 +169,7 @@ def run_qa_loop(
             return False
 
         # Run coder fix session
-        _run_coder_qa_fix_session(config, qa_result.issues, project_dir, rasen_dir)
+        _run_coder_qa_fix_session(config, qa_result.issues, project_dir)
 
         # Delay between iterations
         time.sleep(config.orchestrator.session_delay_seconds)
@@ -186,7 +183,6 @@ def _run_qa_session(
     task_description: str,
     project_dir: Path,
     baseline_commit: str,
-    rasen_dir: Path,
 ) -> QAResult:
     """Run a single QA validation session (read-only).
 
@@ -196,7 +192,6 @@ def _run_qa_session(
         task_description: Original task description
         project_dir: Path to project directory
         baseline_commit: Commit to diff from
-        rasen_dir: Path to .rasen directory
 
     Returns:
         QAResult with approval status and issues
@@ -228,14 +223,10 @@ def _run_qa_session(
         test_results=test_results,
     )
 
-    # Write prompt to temp file
-    prompt_file = rasen_dir / "prompt_qa.md"
-    prompt_file.write_text(prompt)
-
-    # Run QA session
+    # Run QA session (pass prompt directly, no file needed)
     try:
         _result = run_claude_session(
-            prompt_file, project_dir, config.orchestrator.session_timeout_seconds
+            prompt, project_dir, config.orchestrator.session_timeout_seconds
         )
     except SessionError as e:
         logger.error(f"QA session failed: {e}")
@@ -260,16 +251,13 @@ def _run_qa_session(
     return QAResult(approved=False, issues=["No clear QA signal received"])
 
 
-def _run_coder_qa_fix_session(
-    config: Config, issues: list[str], project_dir: Path, rasen_dir: Path
-) -> None:
+def _run_coder_qa_fix_session(config: Config, issues: list[str], project_dir: Path) -> None:
     """Run coder session to fix QA issues.
 
     Args:
         config: RASEN configuration
         issues: List of issues to fix
         project_dir: Path to project directory
-        rasen_dir: Path to .rasen directory
     """
     logger.info("Running coder QA fix session")
 
@@ -287,13 +275,9 @@ def _run_coder_qa_fix_session(
         failed_approaches_section="",
     )
 
-    # Write prompt to temp file
-    prompt_file = rasen_dir / "prompt_coder_qa_fix.md"
-    prompt_file.write_text(prompt)
-
-    # Run coder session
+    # Run coder session (pass prompt directly, no file needed)
     try:
-        run_claude_session(prompt_file, project_dir, config.orchestrator.session_timeout_seconds)
+        run_claude_session(prompt, project_dir, config.orchestrator.session_timeout_seconds)
     except SessionError as e:
         logger.error(f"Coder QA fix session failed: {e}")
         raise

@@ -30,7 +30,7 @@ AGENT_CONFIGS: dict[str, dict[str, Any]] = {
 
 
 def run_claude_session(
-    prompt_file: Path,
+    prompt: str,
     project_dir: Path,
     timeout_seconds: int = 1800,  # 30 minutes default
 ) -> subprocess.CompletedProcess[str]:
@@ -40,7 +40,7 @@ def run_claude_session(
     the prompt and exiting without requiring user interaction.
 
     Args:
-        prompt_file: Path to prompt markdown file
+        prompt: Prompt content to send to Claude
         project_dir: Working directory for the session
         timeout_seconds: Session timeout in seconds
 
@@ -51,15 +51,12 @@ def run_claude_session(
         SessionError: If Claude Code CLI fails or times out
     """
     try:
-        # Read prompt content
-        prompt_content = prompt_file.read_text()
-
         # Run claude chat with --print flag for non-interactive execution
         # Use --permission-mode bypassPermissions to auto-approve tool operations
         # Pipe prompt content via stdin
         result = subprocess.run(
             ["claude", "chat", "--print", "--permission-mode", "bypassPermissions"],
-            input=prompt_content,
+            input=prompt,
             text=True,
             capture_output=True,  # CRITICAL: Capture stdout/stderr for event parsing
             cwd=project_dir,

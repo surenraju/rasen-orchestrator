@@ -275,15 +275,11 @@ class OrchestrationLoop:
             failed_approaches_section=failed_section,
         )
 
-        # Write prompt to temp file
-        prompt_file = self.rasen_dir / f"prompt_{subtask_id}.md"
-        prompt_file.write_text(prompt)
-
-        # Run session
+        # Run session (pass prompt directly, no file needed)
         start_time = time.time()
         try:
             result = run_claude_session(
-                prompt_file,
+                prompt,
                 self.project_dir,
                 self.config.orchestrator.session_timeout_seconds,
             )
@@ -331,15 +327,11 @@ class OrchestrationLoop:
             task_description=task_description,
         )
 
-        # Write prompt to temp file
-        prompt_file = self.rasen_dir / "prompt_initializer.md"
-        prompt_file.write_text(prompt)
-
-        # Run session
+        # Run session (pass prompt directly, no file needed)
         start_time = time.time()
         try:
             result = run_claude_session(
-                prompt_file,
+                prompt,
                 self.project_dir,
                 self.config.orchestrator.session_timeout_seconds,
             )

@@ -60,7 +60,6 @@ def run_review_loop(
         logger.info("Review loop disabled, skipping")
         return True
 
-    rasen_dir = project_dir / ".rasen"
     max_loops = config.review.max_loops
 
     logger.info(f"Starting review loop for subtask {subtask.id} (max {max_loops} loops)")
@@ -69,9 +68,7 @@ def run_review_loop(
         logger.info(f"Review iteration {iteration}/{max_loops}")
 
         # Run reviewer session (read-only)
-        review_result = _run_reviewer_session(
-            config, subtask, project_dir, baseline_commit, rasen_dir
-        )
+        review_result = _run_reviewer_session(config, subtask, project_dir, baseline_commit)
 
         if review_result.approved:
             logger.info(f"Review approved for subtask {subtask.id}")
@@ -90,7 +87,7 @@ def run_review_loop(
             return False
 
         # Run coder fix session
-        _run_coder_fix_session(config, subtask, review_result.feedback, project_dir, rasen_dir)
+        _run_coder_fix_session(config, subtask, review_result.feedback, project_dir)
 
         # Delay between iterations
         time.sleep(config.orchestrator.session_delay_seconds)
@@ -103,7 +100,6 @@ def _run_reviewer_session(
     subtask: Subtask,
     project_dir: Path,
     baseline_commit: str,
-    rasen_dir: Path,
 ) -> ReviewResult:
     """Run a single reviewer session (read-only).
 
@@ -112,7 +108,6 @@ def _run_reviewer_session(
         subtask: Subtask to review
         project_dir: Path to project directory
         baseline_commit: Commit to diff from
-        rasen_dir: Path to .rasen directory
 
     Returns:
         ReviewResult with approval status and feedback
@@ -135,14 +130,10 @@ def _run_reviewer_session(
         git_diff=git_diff,
     )
 
-    # Write prompt to temp file
-    prompt_file = rasen_dir / f"prompt_review_{subtask.id}.md"
-    prompt_file.write_text(prompt)
-
-    # Run reviewer session
+    # Run reviewer session (pass prompt directly, no file needed)
     try:
         _result = run_claude_session(
-            prompt_file, project_dir, config.orchestrator.session_timeout_seconds
+            prompt, project_dir, config.orchestrator.session_timeout_seconds
         )
     except SessionError as e:
         logger.error(f"Reviewer session failed: {e}")
@@ -171,7 +162,6 @@ def _run_coder_fix_session(
     subtask: Subtask,
     feedback: str | None,
     project_dir: Path,
-    rasen_dir: Path,
 ) -> None:
     """Run coder session to fix review issues.
 
@@ -180,7 +170,6 @@ def _run_coder_fix_session(
         subtask: Subtask being fixed
         feedback: Feedback from reviewer
         project_dir: Path to project directory
-        rasen_dir: Path to .rasen directory
     """
     logger.info(f"Running coder fix session for subtask {subtask.id}")
 
@@ -195,13 +184,9 @@ def _run_coder_fix_session(
         failed_approaches_section="",
     )
 
-    # Write prompt to temp file
-    prompt_file = rasen_dir / f"prompt_coder_fix_{subtask.id}.md"
-    prompt_file.write_text(prompt)
-
-    # Run coder session
+    # Run coder session (pass prompt directly, no file needed)
     try:
-        run_claude_session(prompt_file, project_dir, config.orchestrator.session_timeout_seconds)
+        run_claude_session(prompt, project_dir, config.orchestrator.session_timeout_seconds)
     except SessionError as e:
         logger.error(f"Coder fix session failed: {e}")
         raise

@@ -308,15 +308,22 @@ class OrchestrationLoop:
         )
 
         # Run session (pass prompt directly, no file needed)
+        # Enable debug logging to .rasen/debug_logs/
+        debug_log_dir = self.project_dir / ".rasen" / "debug_logs"
         start_time = time.time()
         try:
             result = run_claude_session(
                 prompt,
                 self.project_dir,
                 self.config.orchestrator.session_timeout_seconds,
+                debug_log_dir=debug_log_dir,
             )
         finally:
             duration = time.time() - start_time
+
+        # Extract session ID for logging
+        session_id = getattr(result, "session_id", "unknown")[:8]
+        logger.info(f"Session {self.state.iteration}: Claude session ID: {session_id}")
 
         # Parse actual output from Claude session
         output = result.stdout if result.stdout else ""
@@ -378,15 +385,22 @@ class OrchestrationLoop:
         )
 
         # Run session (pass prompt directly, no file needed)
+        # Enable debug logging to .rasen/debug_logs/
+        debug_log_dir = self.project_dir / ".rasen" / "debug_logs"
         start_time = time.time()
         try:
             result = run_claude_session(
                 prompt,
                 self.project_dir,
                 self.config.orchestrator.session_timeout_seconds,
+                debug_log_dir=debug_log_dir,
             )
         finally:
             duration = time.time() - start_time
+
+        # Extract session ID for logging
+        session_id = getattr(result, "session_id", "unknown")[:8]
+        logger.info(f"Session {self.state.iteration}: Claude session ID: {session_id}")
 
         # Parse actual output from initializer session
         output = result.stdout if result.stdout else ""

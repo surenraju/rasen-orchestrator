@@ -234,10 +234,18 @@ def _run_qa_session(
     )
 
     # Run QA session (pass prompt directly, no file needed)
+    # Enable debug logging to .rasen/debug_logs/
+    debug_log_dir = project_dir / ".rasen" / "debug_logs"
     try:
-        _result = run_claude_session(
-            prompt, project_dir, config.orchestrator.session_timeout_seconds
+        result = run_claude_session(
+            prompt,
+            project_dir,
+            config.orchestrator.session_timeout_seconds,
+            debug_log_dir=debug_log_dir,
         )
+        # Extract session ID for logging
+        session_id = getattr(result, "session_id", "unknown")[:8]
+        logger.info(f"QA session ID: {session_id}")
     except SessionError as e:
         logger.error(f"QA session failed: {e}")
         # On QA failure, assume rejection to be safe
@@ -286,8 +294,18 @@ def _run_coder_qa_fix_session(config: Config, issues: list[str], project_dir: Pa
     )
 
     # Run coder session (pass prompt directly, no file needed)
+    # Enable debug logging to .rasen/debug_logs/
+    debug_log_dir = project_dir / ".rasen" / "debug_logs"
     try:
-        run_claude_session(prompt, project_dir, config.orchestrator.session_timeout_seconds)
+        result = run_claude_session(
+            prompt,
+            project_dir,
+            config.orchestrator.session_timeout_seconds,
+            debug_log_dir=debug_log_dir,
+        )
+        # Extract session ID for logging
+        session_id = getattr(result, "session_id", "unknown")[:8]
+        logger.info(f"Coder QA fix session ID: {session_id}")
     except SessionError as e:
         logger.error(f"Coder QA fix session failed: {e}")
         raise

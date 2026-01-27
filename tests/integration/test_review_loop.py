@@ -270,5 +270,120 @@ def test_review_loop_approves_on_first_try(
             assert mock_session.call_count == 1, "No coder fix sessions should be called"
 
 
+def test_review_loop_requests_changes_then_approves(
+    test_config_with_review: Config,
+    sample_subtask: Subtask,
+    git_repo: Path,
+) -> None:
+    """Test review iteration loop where changes requested then approved.
+
+    This tests the review loop when the reviewer requests changes on the
+    first iteration, then approves on the second iteration. It verifies:
+    - run_review_loop returns True (eventually approved)
+    - Reviewer session is called twice (initial review + re-review)
+    - Coder fix session is called once (to address feedback)
+    - Feedback is passed correctly to the coder fix session
+    - Review loop completes successfully after iteration
+
+    This tests lines 87-103 in review.py:
+    - Line 87-90: Logging changes requested with feedback
+    - Line 92-97: Check if max iterations reached
+    - Line 99-100: Run coder fix session with feedback
+    - Line 103: Delay between iterations
+    """
+    # Get baseline commit
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    baseline_commit = result.stdout.strip()
+
+    # Track call sequence to control mock behavior
+    call_count = 0
+
+    def mock_session_side_effect(*_args, **_kwargs):
+        """Control mock behavior based on call sequence."""
+        nonlocal call_count
+        call_count += 1
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        return mock_result
+
+    # Mock reviewer and coder sessions
+    with patch("rasen.review.run_claude_session") as mock_session:
+        mock_session.side_effect = mock_session_side_effect
+
+        # Mock parse_events to control review outcomes
+        parse_call_count = 0
+
+        def mock_parse_side_effect(_text):
+            """Return different events based on call sequence."""
+            nonlocal parse_call_count
+            parse_call_count += 1
+
+            # First call: reviewer requests changes
+            if parse_call_count == 1:
+                return [
+                    Event(
+                        topic="review.changes_requested",
+                        payload="Please fix formatting and add type hints",
+                    )
+                ]
+            # Second call: coder fix (no events expected from coder fix)
+            elif parse_call_count == 2:
+                return []
+            # Third call: reviewer approves
+            else:
+                return [Event(topic="review.approved", payload="LGTM, changes look good")]
+
+        with patch("rasen.review.parse_events") as mock_parse:
+            mock_parse.side_effect = mock_parse_side_effect
+
+            # Run review loop
+            result = run_review_loop(
+                test_config_with_review,
+                sample_subtask,
+                git_repo,
+                baseline_commit,
+            )
+
+            # Assertions
+            assert result is True, "Review loop should return True when eventually approved"
+            assert mock_session.call_count == 3, (
+                "Should have 3 calls: reviewer (changes requested), coder fix, reviewer (approved)"
+            )
+
+            # Verify the calls were made in correct order
+            call_args_list = mock_session.call_args_list
+
+            # First call: reviewer session (should contain diff, subtask info)
+            first_call_prompt = call_args_list[0][0][0]
+            assert "test-subtask-1" in first_call_prompt, (
+                "First call should be reviewer with subtask ID"
+            )
+            assert "Implement test feature" in first_call_prompt, (
+                "First call should include subtask description"
+            )
+
+            # Second call: coder fix session (should contain feedback)
+            second_call_prompt = call_args_list[1][0][0]
+            assert "Fix review issues" in second_call_prompt, (
+                "Second call should be coder fix with feedback"
+            )
+            assert "Please fix formatting and add type hints" in second_call_prompt, (
+                "Feedback should be passed to coder fix session"
+            )
+
+            # Third call: reviewer session again (re-review after fix)
+            third_call_prompt = call_args_list[2][0][0]
+            assert "test-subtask-1" in third_call_prompt, (
+                "Third call should be reviewer re-review with subtask ID"
+            )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

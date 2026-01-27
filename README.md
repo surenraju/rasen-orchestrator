@@ -15,17 +15,23 @@ Production-ready orchestrator for long-running autonomous coding tasks using Cla
 
 ## Why It Works
 
-RASEN implements [Anthropic's best practices for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), applying proven patterns from production autonomous systems:
+RASEN implements proven patterns from production autonomous systems, combining [Anthropic's reliability practices](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) with [Cursor's scaling insights](https://cursor.com/blog/scaling-agents):
 
-**Core Principles:**
-- **Extended Two-Agent Pattern** - Separate planning (Initializer) from execution (Coder), with read-only validators (Reviewer, QA) preventing corruption
-- **Fresh Context Over Compaction** - Each session starts clean, preventing context degradation over long runs
+**Architecture Principles (from Cursor):**
+- **Clear Role Separation** - Initializer (planner) creates tasks, Coder (worker) executes, validators review—no coordination bottlenecks
+- **Hierarchical Structure** - Planning → Execution → Validation workflow prevents the chaos of flat agent systems
+- **Prompt-First Design** - Strongly-worded prompts ("It is UNACCEPTABLE to...") drive behavior over complex coordination logic
+
+**Reliability Patterns (from Anthropic):**
+- **Extended Two-Agent Pattern** - Read-only validators (Reviewer, QA) prevent execution agents from corrupting their own verification
+- **Fresh Context Over Compaction** - Each session starts clean, preventing context degradation over multi-hour runs
 - **Single Subtask Sessions** - One task per iteration prevents scope creep and enables precise recovery
-- **Intelligent Recovery** - Tracks failed approaches, detects circular fixes (30% similarity threshold), escalates recurring issues (3+ occurrences)
-- **Quality Gates** - Requires explicit evidence ("tests: pass, lint: pass") before completion, no hand-waving
-- **Human Escalation** - Creates `QA_ESCALATION.md` when automated recovery fails, preventing infinite loops
+- **Intelligent Recovery** - Tracks failed approaches, detects circular fixes (30% similarity), escalates recurring issues (3+ occurrences)
+- **Quality Gates** - Requires explicit evidence ("tests: pass, lint: pass") before completion
 
-**Result:** Reliable multi-hour autonomous coding with graceful degradation instead of silent failures.
+**Why This Matters:** Without these patterns, agents drift, thrash on circular fixes, or silently fail. RASEN's architecture ensures graceful degradation—when automation fails, it escalates to humans with context rather than producing broken code.
+
+**Result:** Reliable autonomous coding that scales from 30-minute tasks to multi-hour projects.
 
 ## Quick Start
 

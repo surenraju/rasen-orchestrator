@@ -333,6 +333,22 @@ class OrchestrationLoop:
         else:
             status = SessionStatus.FAILED
 
+        # Record attempt for recovery tracking
+        success = status == SessionStatus.COMPLETE
+        error_msg = (
+            None if success else output[-500:] if output else None
+        )  # Last 500 chars of error
+        commit_hash = self._get_commit_hash() if success else None
+
+        self.recovery_store.record_attempt(
+            subtask_id=subtask_id,
+            session=self.state.iteration,
+            success=success,
+            approach=description,
+            commit_hash=commit_hash,
+            error_message=error_msg,
+        )
+
         return SessionResult(
             status=status,
             output=output,

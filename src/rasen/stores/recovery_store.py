@@ -44,6 +44,7 @@ class RecoveryStore:
         success: bool,
         approach: str,
         commit_hash: str | None = None,
+        error_message: str | None = None,
     ) -> None:
         """Record an attempt for recovery context.
 
@@ -53,6 +54,7 @@ class RecoveryStore:
             success: Whether attempt succeeded
             approach: Description of approach taken
             commit_hash: Git commit hash if successful
+            error_message: Error message if failed
         """
         history = self._load_history()
         history.records.append(
@@ -62,6 +64,7 @@ class RecoveryStore:
                 success=success,
                 approach=approach,
                 commit_hash=commit_hash,
+                error_message=error_message,
             )
         )
         self._save_history(history)

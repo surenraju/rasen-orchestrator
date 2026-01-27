@@ -68,6 +68,7 @@ class AttemptRecord(BaseModel):
     success: bool
     approach: str
     commit_hash: str | None = None
+    error_message: str | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

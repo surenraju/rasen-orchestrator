@@ -265,3 +265,45 @@ def test_good_commit_tracking(rasen_dir):
     # Record another commit
     store.record_good_commit(commit_hash="def456", subtask_id="task-2")
     assert store.get_last_good_commit() == "def456"  # Returns most recent
+
+
+def test_record_attempt_with_error_message(rasen_dir):
+    """Test recording attempt with error message."""
+    store = RecoveryStore(rasen_dir)
+
+    # Record failed attempt with error
+    error_msg = "TypeError: expected string, got int"
+    store.record_attempt(
+        subtask_id="task-1",
+        session=1,
+        success=False,
+        approach="Try using type hints",
+        error_message=error_msg,
+    )
+
+    # Verify error message is stored
+    history = store._load_history()
+    assert len(history.records) == 1
+    assert history.records[0].error_message == error_msg
+    assert history.records[0].success is False
+
+
+def test_record_attempt_with_commit_hash(rasen_dir):
+    """Test recording successful attempt with commit hash."""
+    store = RecoveryStore(rasen_dir)
+
+    # Record successful attempt with commit
+    store.record_attempt(
+        subtask_id="task-1",
+        session=1,
+        success=True,
+        approach="Implemented using dataclasses",
+        commit_hash="abc123def456",
+    )
+
+    # Verify commit hash is stored
+    history = store._load_history()
+    assert len(history.records) == 1
+    assert history.records[0].commit_hash == "abc123def456"
+    assert history.records[0].success is True
+    assert history.records[0].error_message is None  # No error for success

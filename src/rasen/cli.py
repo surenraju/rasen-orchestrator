@@ -157,10 +157,7 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
     pid_file = Path(config.background.pid_file)
 
     # Setup logging - always log to file
-    if background:
-        log_file = Path(config.background.log_file)
-    else:
-        log_file = project_dir / "orchestration.log"
+    log_file = Path(config.background.log_file) if background else project_dir / "orchestration.log"
 
     # Check if already running
     from rasen.daemon import get_daemon_status  # noqa: PLC0415

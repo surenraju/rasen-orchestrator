@@ -116,9 +116,7 @@ def run_claude_session(
 
     except subprocess.TimeoutExpired as e:
         logger.error(f"Session {session_id[:8]}: Timed out after {timeout_seconds}s")
-        raise SessionError(
-            f"Session {session_id[:8]} timed out after {timeout_seconds}s"
-        ) from e
+        raise SessionError(f"Session {session_id[:8]} timed out after {timeout_seconds}s") from e
     except FileNotFoundError as e:
         logger.error("Claude Code CLI not found")
         raise SessionError(

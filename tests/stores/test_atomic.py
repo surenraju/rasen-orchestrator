@@ -40,7 +40,7 @@ def test_atomic_write_creates_parent_dirs(tmp_path: Path):
 
 def test_atomic_write_with_json(tmp_path: Path):
     """Test atomic write with JSON content."""
-    import json
+    import json  # noqa: PLC0415
 
     test_file = tmp_path / "test.json"
     data = {"key": "value", "number": 42, "list": [1, 2, 3]}
@@ -135,14 +135,14 @@ def test_atomic_write_temp_file_cleanup_on_error(tmp_path: Path):
     test_file = test_dir / "test.txt"
 
     # Make parent read-only (Unix only)
-    import sys
+    import sys  # noqa: PLC0415
 
     if sys.platform != "win32":
-        import stat
+        import stat  # noqa: PLC0415
 
         test_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
 
-        try:
+        try:  # noqa: SIM105
             atomic_write(test_file, "content")
         except PermissionError:
             pass  # Expected

@@ -151,7 +151,7 @@ def test_has_uncommitted_changes_staged(git_repo):
 
 def test_get_current_commit_no_git(tmp_path):
     """Test get_current_commit raises on non-git directory."""
-    import pytest
+    import pytest  # noqa: PLC0415
 
     with pytest.raises(GitError):
         get_current_commit(tmp_path)

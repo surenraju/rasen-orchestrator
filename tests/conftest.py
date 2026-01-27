@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -22,10 +21,8 @@ from rasen.config import (
 )
 from rasen.models import (
     ImplementationPlan,
-    SessionStatus,
     Subtask,
     SubtaskStatus,
-    TerminationReason,
 )
 
 
@@ -155,7 +152,12 @@ def git_repo(temp_project_dir: Path) -> Path:
     # Create initial commit
     readme = temp_project_dir / "README.md"
     readme.write_text("# Test Project\n")
-    subprocess.run(["git", "add", "README.md"], cwd=temp_project_dir, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "README.md"],
+        cwd=temp_project_dir,
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
         cwd=temp_project_dir,

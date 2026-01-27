@@ -5,7 +5,7 @@ from __future__ import annotations
 from rasen.prompts import create_agent_prompt
 
 
-def test_create_initializer_prompt(tmp_path, prompts_dir):
+def test_create_initializer_prompt(tmp_path, prompts_dir):  # noqa: ARG001
     """Test creating initializer prompt."""
     # prompts_dir is tmp_path/prompts, but create_agent_prompt expects base dir
     prompt = create_agent_prompt(
@@ -18,7 +18,7 @@ def test_create_initializer_prompt(tmp_path, prompts_dir):
     assert "Initializer" in prompt
 
 
-def test_create_coder_prompt(tmp_path, prompts_dir):
+def test_create_coder_prompt(tmp_path, prompts_dir):  # noqa: ARG001
     """Test creating coder prompt."""
     prompt = create_agent_prompt(
         "coder",
@@ -35,7 +35,7 @@ def test_create_coder_prompt(tmp_path, prompts_dir):
     assert "Coder" in prompt
 
 
-def test_create_reviewer_prompt(tmp_path, prompts_dir):
+def test_create_reviewer_prompt(tmp_path, prompts_dir):  # noqa: ARG001
     """Test creating reviewer prompt."""
     prompt = create_agent_prompt(
         "reviewer",
@@ -47,7 +47,7 @@ def test_create_reviewer_prompt(tmp_path, prompts_dir):
     assert "Reviewer" in prompt
 
 
-def test_create_qa_prompt(tmp_path, prompts_dir):
+def test_create_qa_prompt(tmp_path, prompts_dir):  # noqa: ARG001
     """Test creating QA prompt."""
     prompt = create_agent_prompt(
         "qa",
@@ -59,7 +59,7 @@ def test_create_qa_prompt(tmp_path, prompts_dir):
     assert "QA" in prompt
 
 
-def test_prompt_variables_replaced(tmp_path, prompts_dir):
+def test_prompt_variables_replaced(tmp_path, prompts_dir):  # noqa: ARG001
     """Test that all variables are replaced."""
     prompt = create_agent_prompt(
         "coder",

@@ -57,16 +57,13 @@ def build_binary() -> None:
 
     # Check output
     system = platform.system()
-    if system == "Windows":
-        binary_name = "rasen.exe"
-    else:
-        binary_name = "rasen"
+    binary_name = "rasen.exe" if system == "Windows" else "rasen"
 
     binary_path = dist_dir / binary_name
 
     if binary_path.exists():
         size_mb = binary_path.stat().st_size / (1024 * 1024)
-        print(f"\n✅ Binary built successfully!")
+        print("\n✅ Binary built successfully!")
         print(f"   Location: {binary_path}")
         print(f"   Size: {size_mb:.1f} MB")
         print(f"\nTest it with: {binary_path} --version")

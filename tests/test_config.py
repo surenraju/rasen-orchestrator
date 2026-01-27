@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import yaml
 
-from rasen.config import Config, load_config
-from rasen.exceptions import ConfigurationError
+from rasen.config import load_config
 
 
 def test_load_default_config():

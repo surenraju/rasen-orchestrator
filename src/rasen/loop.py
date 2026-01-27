@@ -8,6 +8,7 @@ from pathlib import Path
 
 from rasen.claude_runner import run_claude_session
 from rasen.config import Config
+from rasen.daemon import should_shutdown
 from rasen.events import parse_events
 from rasen.exceptions import SessionError, StallDetectedError
 from rasen.git import count_new_commits, get_current_commit, is_git_repo
@@ -68,6 +69,23 @@ class OrchestrationLoop:
         try:
             # Main loop
             while self.state.iteration < self.config.orchestrator.max_iterations:
+                # Check for shutdown request
+                if should_shutdown():
+                    logger.info("Shutdown requested, saving state and exiting gracefully")
+                    self.status_store.update(
+                        StatusInfo(
+                            pid=os.getpid(),
+                            iteration=self.state.iteration,
+                            subtask_id=self.state.current_subtask_id or "",
+                            subtask_description="",
+                            status="interrupted",
+                            total_commits=self.state.total_commits,
+                            completed_subtasks=self.plan_store.get_completion_stats()[0],
+                            total_subtasks=self.plan_store.get_completion_stats()[1],
+                        )
+                    )
+                    return TerminationReason.USER_CANCELLED
+
                 self.state.iteration += 1
 
                 # Get next subtask

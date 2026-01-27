@@ -13,6 +13,26 @@
 
 Production-ready orchestrator for long-running autonomous coding tasks using Claude Code CLI as the execution engine.
 
+## Quick Start
+
+```bash
+# Initialize task
+rasen init --task "Your task description"
+
+# Customize prompts (optional)
+vi .rasen/prompts/coder.md  # Add project-specific rules
+
+# Run orchestration
+rasen run                   # Full validation (Review + QA)
+rasen run --skip-review     # Skip code review (faster)
+rasen run --skip-qa         # Skip QA validation
+rasen run --background      # Run in background
+
+# Monitor progress
+rasen status                # Beautiful comprehensive status
+rasen logs --follow         # Watch logs in real-time
+```
+
 ## Implementation Status
 
 ✅ **Production Ready** - All core phases complete!
@@ -48,12 +68,20 @@ See `docs/plan.md` for complete implementation roadmap.
 - **Stall detection** - Identifies stuck sessions (3 no-commit iterations)
 - **Backpressure validation** - Requires "tests: pass, lint: pass" evidence before completion
 
-### Validation Pipeline (NEW!)
-- **Review loop** - Code review after each subtask (max 3 iterations)
+### Validation Pipeline
+- **Configurable timing** - Review/QA per-subtask or after-all-subtasks (Auto-Claude pattern)
+- **Review loop** - Code review validation (max 3 iterations)
 - **QA loop** - Final validation against acceptance criteria (max 50 iterations)
 - **Read-only validators** - Review and QA agents cannot modify files
 - **Recurring issue detection** - Escalates issues that occur 3+ times
 - **Human escalation** - Creates `QA_ESCALATION.md` when intervention needed
+
+### Developer Experience
+- **Session tracking** - Every log message tagged with "Session X" for easy debugging
+- **Beautiful status UI** - Rich, human-readable status with progress bars and colors
+- **Smart log viewing** - Auto-detects foreground/background mode
+- **Per-project customization** - Customize prompts and config without rebuilding
+- **Comprehensive help** - Clear help messages for all commands
 
 ### Intelligent Recovery
 - **Attempt history tracking** - Records all approaches (successful and failed)
@@ -163,18 +191,67 @@ uv run rasen run --skip-review --skip-qa
 ### Monitor Status
 
 ```bash
-# Check current status
-uv run rasen status
+# Check comprehensive status (all details in one command!)
+rasen status
 
-# Output:
-# Status: running
-# PID: 12345
-# Iteration: 3
-# Progress: 2/5 subtasks
-# Total commits: 7
-# Current subtask: auth-2
-#   Implement password hashing
-# Last activity: 2026-01-27T18:30:00Z
+# Beautiful UI with:
+# - Status indicator (🔄 running, ✅ complete, ❌ failed, ⏳ initialized)
+# - Progress bar visualization
+# - Current phase (Coding, Review, QA)
+# - Session number
+# - Commits count
+# - Time since last activity (human-readable: "2m ago")
+# - Next 3 remaining tasks preview
+# - Recent activity log (last 5 entries with timestamps)
+```
+
+**Example Output:**
+
+```
+╔════════════════════════════════════════════════════════════════════╗
+║  🔄  RASEN Orchestrator Status                                    ║
+╠════════════════════════════════════════════════════════════════════╣
+║  Status: RUNNING              PID: 12345          ║
+║  Phase:  Coding               Session: 8           ║
+╠════════════════════════════════════════════════════════════════════╣
+║  Progress: 6/10 subtasks (60%)                            ║
+║  [████████████████████████░░░░░░░░░░░░░░░░]                    ║
+╠════════════════════════════════════════════════════════════════════╣
+║  Current: task-7                                                ║
+║  Add docstrings and type hints to fibonacci function             ║
+╠════════════════════════════════════════════════════════════════════╣
+║  Commits: 10                                                    ║
+║  Last activity: 2m ago                                          ║
+╠════════════════════════════════════════════════════════════════════╣
+║  Remaining: 4 tasks                                             ║
+║    1. Run full test suite and verify 100% coverage             ║
+║    2. Create requirements.txt with dependencies                 ║
+║    3. Create README.md with usage instructions                  ║
+╠════════════════════════════════════════════════════════════════════╣
+║  Recent Activity:                                               ║
+║  23:05:29 │ Session 6: Working on task-6                    ║
+║  23:08:20 │ Session 6: Subtask task-6 completed successful...║
+║  23:08:23 │ Session 7: Working on task-7                    ║
+╚════════════════════════════════════════════════════════════════════╝
+
+💡 Tip: Use 'rasen logs --follow' to watch live updates
+```
+
+### View Logs
+
+```bash
+# View recent logs (last 50 lines)
+rasen logs
+
+# Follow logs in real-time
+rasen logs --follow
+
+# View specific number of lines
+rasen logs --lines 100
+
+# Works in both foreground and background modes:
+# - Foreground: reads orchestration.log (current directory)
+# - Background: reads .rasen/rasen.log (daemon log)
 ```
 
 ### Background Mode
@@ -281,15 +358,20 @@ session:
   timeout_seconds: 1800  # 30 minutes (increase for complex tasks)
   max_iterations: 100    # Max total iterations
 
-# Review loop settings (Coder ↔ Reviewer per subtask)
+# Review loop settings (Coder ↔ Reviewer)
 review:
   enabled: true          # Set to false to skip code review
+  per_subtask: false     # false = review after all subtasks (like Auto-Claude, faster)
+                         # true = review each subtask individually (slower, catches issues early)
   max_iterations: 3      # Max review loops before escalation
 
-# QA loop settings (Coder ↔ QA after all subtasks)
+# QA loop settings (Coder ↔ QA)
 qa:
   enabled: true          # Set to false to skip QA validation
+  per_subtask: false     # false = QA after all subtasks (recommended, like Auto-Claude)
+                         # true = QA each subtask (not recommended, too slow)
   max_iterations: 50     # Max QA loops before escalation
+  recurring_issue_threshold: 3  # Escalate after 3+ occurrences of same issue
 
 # Stall detection
 stall:

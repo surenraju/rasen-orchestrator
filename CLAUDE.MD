@@ -64,6 +64,11 @@ These rules apply to ALL work on this project. Violations will cause rejection.
 - It is UNACCEPTABLE to mark a subtask "completed" without evidence
 - It is UNACCEPTABLE to commit code that fails lint or format checks
 - It is UNACCEPTABLE to ignore type checking errors
+- **It is UNACCEPTABLE to have 0% test coverage on loop.py, review.py, or qa.py**
+- **It is UNACCEPTABLE to write only unit tests without integration tests**
+- **It is UNACCEPTABLE to mock away the actual logic you're trying to test**
+- **It is UNACCEPTABLE to claim "tests pass" without running the actual binary**
+- **It is UNACCEPTABLE to skip testing the full user workflow end-to-end**
 
 ### Session End Checklist
 
@@ -72,9 +77,230 @@ Before finishing ANY coding session, verify:
 - [ ] `uv run ruff format --check .` passes (format - REQUIRED)
 - [ ] `uv run mypy src/` passes (type check - REQUIRED)
 - [ ] `uv run pytest` passes (tests - REQUIRED)
+- [ ] **Coverage check: `uv run pytest --cov=rasen --cov-fail-under=70` passes (REQUIRED)**
+- [ ] **If modified loop.py/review.py/qa.py: Integration test for that workflow exists and passes (REQUIRED)**
+- [ ] **If modified CLI: Actual binary tested manually (build → run command → verify works) (REQUIRED)**
 - [ ] Changes committed with descriptive message
 - [ ] Progress file updated with session notes
 - [ ] Only ONE subtask worked on this session
+
+### NON-NEGOTIABLE TESTING REQUIREMENTS
+
+**STOP. READ THIS BEFORE WRITING ANY CODE.**
+
+These are HARD requirements, not suggestions. Violating these is the same as shipping broken code.
+
+#### 1. WORKFLOW-FIRST TESTING (MANDATORY)
+
+**Before implementing ANY orchestration feature:**
+
+```python
+# Step 1: Write the workflow test FIRST (it will fail)
+def test_user_workflow_for_feature():
+    """Test the ACTUAL user workflow, not isolated components."""
+    # Simulate what the user does
+    # Example: rasen init → rasen run → check output
+    pass
+
+# Step 2: Run the test (it should FAIL)
+# Step 3: Implement the feature
+# Step 4: Test passes
+# Step 5: Add unit tests for edge cases
+```
+
+**DO NOT:**
+- Write implementation first, tests later
+- Test only components in isolation
+- Mock the actual logic you're implementing
+- Skip testing the user's workflow
+
+#### 2. BINARY TESTING (MANDATORY FOR CLI CHANGES)
+
+**If you modified cli.py, loop.py, or ANY command:**
+
+```bash
+# Build the binary
+python build.py
+
+# Test it like a user would
+cd /tmp/test-project
+/path/to/rasen init --task "test task"
+# Check: Did it work? Files created? Output correct?
+
+/path/to/rasen run
+# Check: Did it run? No errors? Expected behavior?
+
+# If ANY of these fail, YOUR TESTS ARE INSUFFICIENT
+```
+
+**This is NOT optional. This is NOT "nice to have". This is REQUIRED.**
+
+#### 3. COVERAGE GATES (ENFORCED)
+
+**Minimum coverage requirements - MUST PASS:**
+
+```bash
+# Overall project coverage
+uv run pytest --cov=rasen --cov-fail-under=70
+
+# Critical file coverage (check individually)
+uv run pytest --cov=rasen.loop --cov-fail-under=80
+uv run pytest --cov=rasen.review --cov-fail-under=75
+uv run pytest --cov=rasen.qa --cov-fail-under=75
+```
+
+**If coverage is below threshold:**
+- DO NOT mark task complete
+- DO NOT move to next feature
+- WRITE MORE TESTS until coverage passes
+
+**If you see 0% coverage on loop.py/review.py/qa.py:**
+- This is a CRITICAL FAILURE
+- Stop everything and write integration tests immediately
+
+#### 4. INTEGRATION TEST EXISTENCE CHECK (MANDATORY)
+
+**Before claiming "feature complete", verify these files exist and have passing tests:**
+
+```bash
+tests/integration/
+├── test_orchestration_flow.py     # MUST exist - tests full loop
+├── test_binary_fibonacci.py       # MUST exist - tests actual binary
+├── test_review_loop.py             # MUST exist if review.py modified
+├── test_qa_loop.py                 # MUST exist if qa.py modified
+```
+
+**Each file MUST have:**
+- At least one test that exercises the full workflow
+- At least one test that verifies file creation
+- At least one test that verifies error handling
+
+**Run them:**
+```bash
+uv run pytest tests/integration/ -v
+
+# ALL tests must pass (except those requiring API key)
+# If ANY test fails, feature is NOT complete
+```
+
+#### 5. THE ONE TEST THAT MATTERS
+
+**Every feature MUST have a test that answers: "Does the user's workflow work?"**
+
+```python
+def test_feature_works_end_to_end():
+    """Can a user actually use this feature successfully?"""
+    # Set up exactly as user would (empty project, fresh state)
+    # Run commands exactly as user would
+    # Verify output exactly as user would check
+    # NO MOCKING OF CORE LOGIC
+
+    # Example for Initializer feature:
+    # 1. No plan exists
+    # 2. Run orchestration
+    # 3. Initializer is called
+    # 4. Plan file created
+    # 5. Plan has valid structure
+
+    # If this test passes, feature works
+    # If this test fails, EVERYTHING ELSE IS IRRELEVANT
+```
+
+#### 6. WHAT TO MOCK vs WHAT NOT TO MOCK
+
+**DO mock (external dependencies):**
+- ✅ Claude API calls (expensive, slow, requires auth)
+- ✅ Network requests
+- ✅ Time.sleep (for speed)
+
+**DO NOT mock (your actual logic):**
+- ❌ OrchestrationLoop.run() - THIS IS WHAT YOU'RE TESTING
+- ❌ Path construction - SOURCE OF BUGS
+- ❌ File creation/reading - SOURCE OF BUGS
+- ❌ JSON serialization - SOURCE OF BUGS
+- ❌ Agent session calls - YOU NEED TO VERIFY THESE HAPPEN
+
+**Example of GOOD mocking:**
+```python
+# Mock the external Claude call, test our orchestration
+with patch("rasen.loop.run_claude_session") as mock:
+    mock.return_value = MagicMock(returncode=0)
+    loop.run()  # Our actual code runs
+    assert mock.called  # We verify it was called
+    assert plan_file.exists()  # We verify files created
+```
+
+**Example of BAD mocking:**
+```python
+# Mock everything, test nothing
+with patch("rasen.loop.OrchestrationLoop.run") as mock:
+    mock.return_value = "success"
+    result = loop.run()  # Just returns mock value
+    assert result == "success"  # USELESS TEST
+```
+
+#### 7. FAILURE CRITERIA
+
+**Your tests are INSUFFICIENT if:**
+
+1. **Coverage report shows 0% on any critical file**
+   - Immediate action: Write integration tests
+   - Do not proceed until fixed
+
+2. **All tests pass but binary doesn't work**
+   - This means you over-mocked or tested wrong things
+   - Write end-to-end workflow test
+   - Actually run the binary
+
+3. **Tests only verify happy path**
+   - Add error handling tests
+   - Add edge case tests
+   - Add failure scenario tests
+
+4. **No integration tests exist**
+   - Unit tests alone are INSUFFICIENT
+   - Write at least one full workflow test
+
+5. **Integration tests don't actually integrate**
+   - If you're mocking the functions you're supposed to test, that's not integration
+   - Mock external dependencies only
+
+#### 8. ENFORCEMENT
+
+**Before ANY commit to loop.py, review.py, qa.py, or cli.py:**
+
+```bash
+# Run this MANDATORY pre-commit check
+./scripts/pre-commit-orchestration.sh
+
+# Which does:
+# 1. Build binary
+# 2. Run integration tests
+# 3. Check coverage on modified files
+# 4. Run binary smoke test
+# 5. FAIL if any step fails
+```
+
+**If you cannot run the binary test (no build environment):**
+- At minimum: Integration test with mocked Claude must pass
+- At minimum: Coverage must be >75% on modified files
+- Document in commit: "Binary test pending" and create follow-up task
+
+---
+
+## REMEMBER
+
+**Unit tests tell you if components work in isolation.**
+**Integration tests tell you if the SYSTEM works.**
+**Running the binary tells you if USERS can actually use it.**
+
+**YOU NEED ALL THREE.**
+
+If you only have unit tests, you have false confidence. Test coverage means nothing if you're not testing the right things.
+
+**The test that matters most: Can a user run the tool and get working code?**
+
+Everything else is secondary.
 
 ---
 
@@ -393,8 +619,21 @@ Following Anthropic's security model:
 
 ## Testing
 
+**See NON-NEGOTIABLE TESTING REQUIREMENTS section above for mandatory rules.**
+
 ```bash
-# Run all tests with coverage
+# MANDATORY: Run with coverage gate (MUST pass before commit)
+uv run pytest --cov=rasen --cov-fail-under=70
+
+# MANDATORY: Check critical file coverage
+uv run pytest --cov=rasen.loop --cov-fail-under=80
+uv run pytest --cov=rasen.review --cov-fail-under=75
+uv run pytest --cov=rasen.qa --cov-fail-under=75
+
+# MANDATORY: Integration tests (MUST pass before commit)
+uv run pytest tests/integration/ -v --timeout=300
+
+# Detailed coverage report
 uv run pytest tests/ --cov=rasen --cov-report=term-missing
 
 # Run specific test file
@@ -403,12 +642,19 @@ uv run pytest tests/test_stall_detection.py -v
 # Run specific test function
 uv run pytest tests/test_config.py::test_load_defaults -v
 
-# Integration tests (requires SDK)
-uv run pytest tests/integration/ -v --timeout=300
-
 # Run tests in parallel (faster)
 uv run pytest -n auto
+
+# MANDATORY: Full pre-commit check
+uv run ruff format . && \
+uv run ruff check . --fix && \
+uv run ruff check . && \
+uv run mypy src/ && \
+uv run pytest --cov=rasen --cov-fail-under=70 && \
+uv run pytest tests/integration/ -v
 ```
+
+**If ANY of the MANDATORY checks fail, DO NOT COMMIT.**
 
 ### Testing Orchestration Flows
 

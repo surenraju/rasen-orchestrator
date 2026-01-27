@@ -9,7 +9,7 @@ from pathlib import Path
 from rasen.claude_runner import run_claude_session
 from rasen.config import Config
 from rasen.daemon import should_shutdown
-from rasen.events import parse_events
+from rasen.events import has_blocked_event, has_completion_event, parse_events
 from rasen.exceptions import SessionError, StallDetectedError
 from rasen.git import count_new_commits, get_current_commit, is_git_repo
 from rasen.logging import get_logger
@@ -290,18 +290,24 @@ class OrchestrationLoop:
         finally:
             duration = time.time() - start_time
 
-        # Parse output (would need to capture stdout/stderr properly)
-        # For now, simulate events based on return code
-        if result.returncode == 0:
-            events = [parse_events('<event topic="build.done">Session completed</event>')[0]]
+        # Parse actual output from Claude session
+        output = result.stdout if result.stdout else ""
+        events = parse_events(output)
+
+        # Determine status from events and return code
+        if result.returncode == 0 and has_completion_event(events):
             status = SessionStatus.COMPLETE
+        elif has_blocked_event(events):
+            status = SessionStatus.BLOCKED
+        elif result.returncode == 0:
+            # Succeeded but no completion event - keep working
+            status = SessionStatus.CONTINUE
         else:
-            events = []
             status = SessionStatus.FAILED
 
         return SessionResult(
             status=status,
-            output="",  # Would capture actual output
+            output=output,
             commits_made=0,  # Will be set by caller
             events=events,
             duration_seconds=duration,
@@ -340,17 +346,21 @@ class OrchestrationLoop:
         finally:
             duration = time.time() - start_time
 
-        # Parse output
-        if result.returncode == 0:
-            events = [parse_events('<event topic="init.done">Plan created</event>')[0]]
+        # Parse actual output from initializer session
+        output = result.stdout if result.stdout else ""
+        events = parse_events(output)
+
+        # Determine status
+        if result.returncode == 0 and has_completion_event(events):
             status = SessionStatus.COMPLETE
+        elif result.returncode == 0:
+            status = SessionStatus.CONTINUE
         else:
-            events = []
             status = SessionStatus.FAILED
 
         return SessionResult(
             status=status,
-            output="",
+            output=output,
             commits_made=0,
             events=events,
             duration_seconds=duration,

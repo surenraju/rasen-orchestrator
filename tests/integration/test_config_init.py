@@ -5,13 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from click.testing import CliRunner
+
+from rasen.cli import main
+from rasen.prompts import create_agent_prompt
 
 
 def test_init_creates_config_file(tmp_path: Path) -> None:
     """Test that rasen init creates rasen-config.yml."""
-    from click.testing import CliRunner
-
-    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -40,9 +41,6 @@ def test_init_creates_config_file(tmp_path: Path) -> None:
 
 def test_init_copies_agent_prompts(tmp_path: Path) -> None:
     """Test that rasen init copies all agent prompts to .rasen/prompts/."""
-    from click.testing import CliRunner
-
-    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -63,9 +61,6 @@ def test_init_copies_agent_prompts(tmp_path: Path) -> None:
 
 def test_init_doesnt_overwrite_custom_prompts(tmp_path: Path) -> None:
     """Test that rasen init doesn't overwrite existing custom prompts."""
-    from click.testing import CliRunner
-
-    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -88,7 +83,6 @@ def test_init_doesnt_overwrite_custom_prompts(tmp_path: Path) -> None:
 
 def test_create_agent_prompt_uses_local_prompts(tmp_path: Path) -> None:
     """Test that create_agent_prompt uses local customized prompts."""
-    from rasen.prompts import create_agent_prompt
 
     # Create .rasen/prompts/ with custom prompt
     prompts_dir = tmp_path / ".rasen" / "prompts"
@@ -114,7 +108,6 @@ def test_create_agent_prompt_uses_local_prompts(tmp_path: Path) -> None:
 
 def test_create_agent_prompt_falls_back_to_bundled(tmp_path: Path) -> None:
     """Test that create_agent_prompt falls back to bundled prompts if no local."""
-    from rasen.prompts import create_agent_prompt
 
     # Don't create local prompts
 
@@ -135,9 +128,6 @@ def test_create_agent_prompt_falls_back_to_bundled(tmp_path: Path) -> None:
 
 def test_init_output_shows_customization_instructions(tmp_path: Path) -> None:
     """Test that rasen init output guides users to customize."""
-    from click.testing import CliRunner
-
-    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -154,9 +144,6 @@ def test_init_output_shows_customization_instructions(tmp_path: Path) -> None:
 
 def test_config_file_has_correct_defaults(tmp_path: Path) -> None:
     """Test that rasen-config.yml has sensible defaults."""
-    from click.testing import CliRunner
-
-    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -190,9 +177,6 @@ def test_config_file_has_correct_defaults(tmp_path: Path) -> None:
 
 def test_prompt_paths_in_config(tmp_path: Path) -> None:
     """Test that config references correct prompt paths."""
-    from click.testing import CliRunner
-
-    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -211,9 +195,6 @@ def test_prompt_paths_in_config(tmp_path: Path) -> None:
 
 def test_multiple_inits_preserve_state(tmp_path: Path) -> None:
     """Test that multiple rasen init calls preserve existing state."""
-    from click.testing import CliRunner
-
-    from rasen.cli import main
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):

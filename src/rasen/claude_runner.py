@@ -61,6 +61,7 @@ def run_claude_session(
             ["claude", "chat", "--print", "--permission-mode", "bypassPermissions"],
             input=prompt_content,
             text=True,
+            capture_output=True,  # CRITICAL: Capture stdout/stderr for event parsing
             cwd=project_dir,
             timeout=timeout_seconds,
             check=False,  # Don't raise on non-zero exit

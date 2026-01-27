@@ -268,28 +268,138 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
 @main.command()
 @click.pass_context
 def status(ctx: click.Context) -> None:
-    """Show current status."""
+    """Show current status with comprehensive details."""
+    import subprocess  # noqa: PLC0415
+    from datetime import datetime  # noqa: PLC0415
+
+    from rasen.stores.plan_store import PlanStore  # noqa: PLC0415
     from rasen.stores.status_store import StatusStore  # noqa: PLC0415
 
     config = ctx.obj["config"]
+    project_dir = Path.cwd()
+    rasen_dir = project_dir / ".rasen"
     status_file = Path(config.background.status_file)
 
     store = StatusStore(status_file)
-    status = store.load()
+    status_info = store.load()
 
-    if not status:
-        click.echo("Status: Not running")
+    if not status_info:
+        click.echo("╔════════════════════════════════════════════════════════╗")
+        click.echo("║  RASEN Status                                          ║")
+        click.echo("╠════════════════════════════════════════════════════════╣")
+        click.echo("║  Status: Not running                                   ║")
+        click.echo("╚════════════════════════════════════════════════════════╝")
         return
 
-    click.echo(f"Status: {status.status}")
-    click.echo(f"PID: {status.pid}")
-    click.echo(f"Iteration: {status.iteration}")
-    click.echo(f"Progress: {status.completed_subtasks}/{status.total_subtasks} subtasks")
-    click.echo(f"Total commits: {status.total_commits}")
-    if status.subtask_id:
-        click.echo(f"Current subtask: {status.subtask_id}")
-        click.echo(f"  {status.subtask_description}")
-    click.echo(f"Last activity: {status.last_activity}")
+    # Calculate progress percentage
+    if status_info.total_subtasks > 0:
+        progress_pct = int((status_info.completed_subtasks / status_info.total_subtasks) * 100)
+    else:
+        progress_pct = 0
+
+    # Progress bar
+    bar_width = 40
+    filled = int((progress_pct / 100) * bar_width)
+    bar = "█" * filled + "░" * (bar_width - filled)
+
+    # Status emoji
+    status_emoji = {
+        "running": "🔄",
+        "initialized": "⏳",
+        "complete": "✅",
+        "failed": "❌",
+    }.get(status_info.status, "❓")
+
+    # Calculate time elapsed
+    now = datetime.now(UTC)
+    elapsed = now - status_info.last_activity
+    if elapsed.total_seconds() < 60:
+        time_ago = f"{int(elapsed.total_seconds())}s ago"
+    elif elapsed.total_seconds() < 3600:
+        time_ago = f"{int(elapsed.total_seconds() / 60)}m ago"
+    else:
+        time_ago = f"{int(elapsed.total_seconds() / 3600)}h ago"
+
+    # Print header
+    click.echo("\n╔════════════════════════════════════════════════════════════════════╗")
+    click.echo(f"║  {status_emoji}  RASEN Orchestrator Status" + " " * 36 + "║")
+    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+
+    # Status and PID
+    click.echo(f"║  Status: {status_info.status.upper():<20} PID: {status_info.pid:<15}║")
+    click.echo(f"║  Phase:  {status_info.current_phase:<20} Session: {status_info.iteration:<12}║")
+    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+
+    # Progress
+    completed = status_info.completed_subtasks
+    total = status_info.total_subtasks
+    progress_text = f"{completed}/{total} subtasks ({progress_pct}%)"
+    padding = " " * (47 - len(progress_text))
+    click.echo(f"║  Progress: {progress_text}{padding}║")
+    click.echo(f"║  [{bar}]" + " " * (64 - len(bar) - 4) + "║")
+    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+
+    # Current task
+    if status_info.subtask_id:
+        click.echo(f"║  Current: {status_info.subtask_id:<54}║")
+        desc = status_info.subtask_description or ""
+        if len(desc) > 60:
+            desc = desc[:57] + "..."
+        click.echo(f"║  {desc:<64}║")
+    else:
+        click.echo("║  Current: Initializing..." + " " * 41 + "║")
+
+    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+
+    # Git info
+    click.echo(f"║  Commits: {status_info.total_commits:<54}║")
+
+    # Last activity
+    click.echo(f"║  Last activity: {time_ago:<48}║")
+    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+
+    # Load plan to show remaining tasks
+    plan_store = PlanStore(rasen_dir / "implementation_plan.json")
+    if plan := plan_store.load():
+        pending_tasks = [s for s in plan.subtasks if s.status.value == "pending"]
+        if pending_tasks:
+            remaining_text = f"{len(pending_tasks)} tasks"
+            padding = " " * (54 - len(remaining_text))
+            click.echo(f"║  Remaining: {remaining_text}{padding}║")
+            # Show next 3 tasks
+            for i, task in enumerate(pending_tasks[:3], 1):
+                desc = task.description
+                task_desc = desc[:55] if len(desc) > 55 else desc
+                click.echo(f"║    {i}. {task_desc:<59}║")
+        else:
+            click.echo("║  Remaining: No pending tasks" + " " * 36 + "║")
+
+    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+
+    # Recent log entries (last 5 lines)
+    log_file = rasen_dir.parent / "orchestration.log"
+    if log_file.exists():
+        try:
+            result = subprocess.run(
+                ["tail", "-n", "5", str(log_file)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            click.echo("║  Recent Activity:" + " " * 47 + "║")
+            for line in result.stdout.strip().split("\n"):
+                # Extract timestamp and message
+                if " - " in line:
+                    parts = line.split(" - ", 3)
+                    if len(parts) >= 4:
+                        time_part = parts[0].split()[1]  # Get time only
+                        msg = parts[-1][:55]
+                        click.echo(f"║  {time_part} │ {msg:<48}║")
+        except Exception:
+            pass
+
+    click.echo("╚════════════════════════════════════════════════════════════════════╝")
+    click.echo("\n💡 Tip: Use 'rasen logs --follow' to watch live updates\n")
 
 
 @main.command()
@@ -297,24 +407,44 @@ def status(ctx: click.Context) -> None:
 @click.option("--lines", "-n", default=50, help="Number of lines to show")
 @click.pass_context
 def logs(ctx: click.Context, follow: bool, lines: int) -> None:
-    """View orchestrator logs."""
+    """View orchestrator logs (supports both foreground and background modes)."""
     import subprocess  # noqa: PLC0415
 
     config = ctx.obj["config"]
-    log_file = Path(config.background.log_file)
+    project_dir = Path.cwd()
 
-    if not log_file.exists():
-        click.echo("No log file found. Daemon may not have been started yet.")
+    # Check for foreground log first (orchestration.log in current dir)
+    foreground_log = project_dir / "orchestration.log"
+    daemon_log = Path(config.background.log_file)
+
+    # Determine which log file to use
+    log_file = None
+    log_mode = None
+
+    if foreground_log.exists():
+        log_file = foreground_log
+        log_mode = "foreground"
+    elif daemon_log.exists():
+        log_file = daemon_log
+        log_mode = "background"
+
+    if not log_file:
+        click.echo("No log file found.")
+        click.echo("Logs are created when you run:")
+        click.echo("  - Foreground: 'rasen run' (creates orchestration.log)")
+        click.echo("  - Background: 'rasen run --background' (creates .rasen/rasen.log)")
         return
 
     if follow:
-        click.echo(f"Following log file: {log_file} (Ctrl+C to stop)")
-        click.echo("---")
+        mode_label = "foreground" if log_mode == "foreground" else "background (daemon)"
+        click.echo(f"Following {mode_label} log: {log_file}")
+        click.echo("Press Ctrl+C to stop")
+        click.echo("─" * 70)
         try:
             # Use tail -f to follow log
             subprocess.run(["tail", "-f", str(log_file)], check=False)
         except KeyboardInterrupt:
-            click.echo("\nStopped following log")
+            click.echo("\n\nStopped following log")
     else:
         # Show last N lines
         try:
@@ -324,6 +454,8 @@ def logs(ctx: click.Context, follow: bool, lines: int) -> None:
                 text=True,
                 check=True,
             )
+            mode_label = "Foreground" if log_mode == "foreground" else "Background (daemon)"
+            click.echo(f"─── {mode_label} Log (last {lines} lines) ───")
             click.echo(result.stdout)
         except subprocess.CalledProcessError:
             click.echo("Error reading log file", err=True)

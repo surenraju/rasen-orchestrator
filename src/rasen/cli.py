@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 
 import click
@@ -33,12 +34,37 @@ def init(ctx: click.Context, task: str) -> None:
     click.echo(f"Project: {config.project.name}")
     click.echo(f"Working directory: {config.project.root}")
 
-    # TODO: Run initializer agent session
-    # For now, just create placeholder
+    # Create .rasen directory
     rasen_dir = Path(config.project.root) / ".rasen"
     rasen_dir.mkdir(parents=True, exist_ok=True)
 
+    # Save task description
+    task_file = rasen_dir / "task.txt"
+    task_file.write_text(task.strip())
+
+    # Initialize status file
+    import os  # noqa: PLC0415
+    from datetime import datetime  # noqa: PLC0415
+
+    from rasen.stores.status_store import StatusInfo, StatusStore  # noqa: PLC0415
+
+    status_store = StatusStore(rasen_dir)
+    status_store.update(
+        StatusInfo(
+            pid=os.getpid(),
+            iteration=0,
+            subtask_id=None,
+            subtask_description=None,
+            status="initialized",
+            last_activity=datetime.now(UTC),
+        )
+    )
+
     click.echo("\n✅ Task initialized")
+    click.echo(
+        f"   Task description saved to: {task_file}\n"
+        f"   State directory: {rasen_dir}\n"
+    )
     click.echo("Run 'rasen run' to start the orchestration loop")
 
 
@@ -96,13 +122,27 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
         # After daemonize, we're in the child process
         # The parent already exited, so this runs in background
 
-    # Get task description from plan
+    # Get task description from plan or task file
     from rasen.stores.plan_store import PlanStore  # noqa: PLC0415
 
-    plan_store = PlanStore(project_dir / ".rasen")
+    rasen_dir = project_dir / ".rasen"
+    plan_store = PlanStore(rasen_dir)
     task_description = ""
+
     if plan := plan_store.load():
+        # Use existing plan
         task_description = plan.task_name
+    else:
+        # Load from task.txt (created by init command)
+        task_file = rasen_dir / "task.txt"
+        if task_file.exists():
+            task_description = task_file.read_text().strip()
+        else:
+            click.echo(
+                'Error: No task found. Run \'rasen init --task "description"\' first.',
+                err=True,
+            )
+            return
 
     # Setup signal handlers if not already done (foreground mode)
     if not background:

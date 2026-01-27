@@ -19,6 +19,8 @@ from rasen.models import (
     TerminationReason,
 )
 from rasen.prompts import create_agent_prompt
+from rasen.qa import run_qa_loop
+from rasen.review import run_review_loop
 from rasen.stores.memory_store import MemoryStore
 from rasen.stores.plan_store import PlanStore
 from rasen.stores.recovery_store import RecoveryStore
@@ -31,16 +33,18 @@ logger = get_logger(__name__)
 class OrchestrationLoop:
     """Main orchestration loop that manages agent sessions."""
 
-    def __init__(self, config: Config, project_dir: Path) -> None:
+    def __init__(self, config: Config, project_dir: Path, task_description: str = "") -> None:
         """Initialize orchestration loop.
 
         Args:
             config: RASEN configuration
             project_dir: Path to project directory
+            task_description: Original task description (for QA)
         """
         self.config = config
         self.project_dir = project_dir
         self.rasen_dir = project_dir / ".rasen"
+        self.task_description = task_description
 
         # Initialize stores
         self.plan_store = PlanStore(self.rasen_dir)
@@ -51,6 +55,7 @@ class OrchestrationLoop:
         # State
         self.state = LoopState()
         self.no_commit_counts: dict[str, int] = {}
+        self.baseline_commit = self._get_commit_hash()  # Capture at start
 
     def run(self) -> TerminationReason:
         """Run the orchestration loop until completion or termination.
@@ -68,7 +73,25 @@ class OrchestrationLoop:
                 # Get next subtask
                 subtask = self.plan_store.get_next_subtask()
                 if not subtask:
-                    # All subtasks complete
+                    # All subtasks complete - run QA validation
+                    logger.info("All subtasks complete, starting QA validation")
+
+                    plan = self.plan_store.load()
+                    if plan and self.config.qa.enabled:
+                        qa_passed = run_qa_loop(
+                            self.config,
+                            plan,
+                            self.project_dir,
+                            self.baseline_commit,
+                            self.task_description,
+                        )
+
+                        if not qa_passed:
+                            logger.error("QA validation failed or escalated")
+                            self.status_store.mark_failed("QA validation failed")
+                            return TerminationReason.ERROR
+
+                    # All done!
                     self.status_store.mark_completed()
                     return TerminationReason.COMPLETE
 
@@ -112,11 +135,25 @@ class OrchestrationLoop:
                     if session_result.status == SessionStatus.COMPLETE:
                         # Validate completion
                         if validate_completion(session_result.events, self.config.backpressure):
-                            self.plan_store.mark_complete(subtask.id)
-                            self.recovery_store.record_good_commit(
-                                self._get_commit_hash(), subtask.id
-                            )
-                            logger.info(f"Subtask {subtask.id} completed successfully")
+                            # Run review loop if enabled
+                            review_passed = True
+                            if self.config.review.enabled:
+                                subtask_baseline = commit_before
+                                review_passed = run_review_loop(
+                                    self.config, subtask, self.project_dir, subtask_baseline
+                                )
+
+                            if review_passed:
+                                self.plan_store.mark_complete(subtask.id)
+                                self.recovery_store.record_good_commit(
+                                    self._get_commit_hash(), subtask.id
+                                )
+                                logger.info(
+                                    f"Subtask {subtask.id} completed and reviewed successfully"
+                                )
+                            else:
+                                logger.warning(f"Subtask {subtask.id} completed but failed review")
+                                self.state.consecutive_failures += 1
                         else:
                             logger.warning(
                                 f"Subtask {subtask.id} claimed done but failed validation"

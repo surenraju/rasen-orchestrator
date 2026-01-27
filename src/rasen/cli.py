@@ -74,11 +74,27 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
 
     # Run orchestration loop
     project_dir = Path(config.project.root)
-    loop = OrchestrationLoop(config, project_dir)
+
+    # Try to get task description from plan (if available)
+    from rasen.stores.plan_store import PlanStore  # noqa: PLC0415
+
+    plan_store = PlanStore(project_dir / ".rasen")
+    task_description = ""
+    if plan := plan_store.load():
+        task_description = plan.task_name
+
+    loop = OrchestrationLoop(config, project_dir, task_description)
 
     try:
         reason = loop.run()
         click.echo(f"\nOrchestration completed: {reason.value}")
+
+        if reason.value == "complete":
+            click.echo("\n✅ All subtasks completed successfully!")
+            if config.review.enabled:
+                click.echo("✅ Code review validation passed")
+            if config.qa.enabled:
+                click.echo("✅ QA validation passed")
     except KeyboardInterrupt:
         click.echo("\n\nInterrupted by user")
     except Exception as e:

@@ -33,32 +33,6 @@ rasen status                # Beautiful comprehensive status
 rasen logs --follow         # Watch logs in real-time
 ```
 
-## Implementation Status
-
-✅ **Production Ready** - All core phases complete!
-
-- **Phase 0**: Project setup with uv, ruff, mypy, pytest
-- **Phase 1**: Foundation (config, models, CLI, exceptions, logging)
-- **Phase 2**: Claude Code CLI integration (subprocess wrapper, prompts, events)
-- **Phase 3**: State management (plan, recovery, memory stores with atomic operations)
-- **Phase 4**: Orchestration loop with stall detection and backpressure validation
-- **Phase 4B**: ✅ **Review loop** (Coder ↔ Reviewer validation per subtask)
-- **Phase 4C**: ✅ **QA loop** (Coder ↔ QA validation with recurring issue escalation)
-- **Phase 5**: Git operations (commit counting, diff generation)
-- **Phase 7**: ✅ **Background daemon mode** with auto-resume and graceful shutdown
-- **Phase 8**: ✅ **Test suite** (112 tests, 28% coverage)
-
-🚧 **Optional Enhancements**
-
-- Phase 6: Advanced stall detection (circular fix detection with similarity)
-- Phase 8: Increase test coverage to 80%+ (integration tests)
-
-**Status**: ✅ Fully functional orchestrator ready for production use
-
-See `docs/plan.md` for complete implementation roadmap.
-
----
-
 ## Features
 
 ### Core Orchestration

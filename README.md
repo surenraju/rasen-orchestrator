@@ -15,7 +15,7 @@ Production-ready orchestrator for long-running autonomous coding tasks using Cla
 
 ## Implementation Status
 
-✅ **Core Implementation Complete** (Phases 0-5 + Review/QA)
+✅ **Production Ready** - All core phases complete!
 
 - **Phase 0**: Project setup with uv, ruff, mypy, pytest
 - **Phase 1**: Foundation (config, models, CLI, exceptions, logging)
@@ -25,14 +25,15 @@ Production-ready orchestrator for long-running autonomous coding tasks using Cla
 - **Phase 4B**: ✅ **Review loop** (Coder ↔ Reviewer validation per subtask)
 - **Phase 4C**: ✅ **QA loop** (Coder ↔ QA validation with recurring issue escalation)
 - **Phase 5**: Git operations (commit counting, diff generation)
+- **Phase 7**: ✅ **Background daemon mode** with auto-resume and graceful shutdown
+- **Phase 8**: ✅ **Test suite** (112 tests, 28% coverage)
 
-🚧 **Optional Enhancements** (Not critical for MVP)
+🚧 **Optional Enhancements**
 
 - Phase 6: Advanced stall detection (circular fix detection with similarity)
-- Phase 7: Background daemon mode with PID management
-- Phase 8: Comprehensive test suite (80%+ coverage target)
+- Phase 8: Increase test coverage to 80%+ (integration tests)
 
-**Status**: ✅ Fully functional orchestrator with complete validation pipeline
+**Status**: ✅ Fully functional orchestrator ready for production use
 
 See `docs/plan.md` for complete implementation roadmap.
 
@@ -160,21 +161,34 @@ uv run rasen status
 # Last activity: 2026-01-27T18:30:00Z
 ```
 
-### Background Mode (Coming in Phase 7)
+### Background Mode
+
+For multi-hour unattended tasks:
 
 ```bash
-# Run in background for multi-hour tasks
+# Run in background (daemon mode)
 uv run rasen run --background
 
-# Check logs
+# Monitor status
+uv run rasen status
+
+# View logs in real-time
 uv run rasen logs --follow
 
-# Stop background process
+# Stop background process (graceful shutdown)
 uv run rasen stop
 
-# Resume after interruption
-uv run rasen resume
+# Resume after interruption (auto-continues from where it left off)
+uv run rasen resume --background
 ```
+
+**Features:**
+- ✅ Runs completely detached from terminal
+- ✅ Auto-resume after interruptions
+- ✅ Graceful shutdown with state preservation
+- ✅ Real-time status monitoring
+
+See [Background Mode Guide](docs/background-mode.md) for complete usage details.
 
 ---
 
@@ -221,7 +235,18 @@ qa:
   recurring_issue_threshold: 3       # Escalate after 3+ occurrences
 ```
 
-See `rasen.yml.example` for full configuration options.
+See `rasen.yml.example` for full configuration options, or read the [Configuration Guide](docs/configuration.md) for detailed reference.
+
+---
+
+## Documentation
+
+- **[Configuration Guide](docs/configuration.md)** - Complete `rasen.yml` reference
+- **[Background Mode Guide](docs/background-mode.md)** - Long-running tasks, monitoring, auto-resume
+- **[DAEMON.md](DAEMON.md)** - Technical details of daemon implementation
+- **[BUILD.md](BUILD.md)** - Building standalone binary with PyInstaller
+- **[Implementation Plan](docs/plan.md)** - Full development roadmap
+- **[Project Instructions](CLAUDE.MD)** - Coding standards and architecture
 
 ---
 

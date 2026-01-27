@@ -33,7 +33,7 @@ from rasen.config import (
 from rasen.events import Event
 from rasen.exceptions import SessionError
 from rasen.models import Subtask
-from rasen.review import _run_reviewer_session, run_review_loop
+from rasen.review import _run_coder_fix_session, _run_reviewer_session, run_review_loop
 
 
 @pytest.fixture
@@ -645,6 +645,156 @@ def test_reviewer_session_handles_failure(
         )
 
         # Verify the session was called (and raised exception)
+        assert mock_session.called, "run_claude_session should have been called"
+
+
+def test_coder_fix_session_execution(
+    test_config_with_review: Config,
+    sample_subtask: Subtask,
+    git_repo: Path,
+) -> None:
+    """Test _run_coder_fix_session executes successfully with correct prompt.
+
+    This tests the coder fix session execution (lines 184-202 in review.py).
+    It verifies:
+    - run_claude_session is called with correct arguments
+    - Prompt contains feedback from reviewer
+    - Prompt contains "Fix review issues" description
+    - Session timeout is passed correctly
+    - Debug log directory is set correctly
+    - Session completes successfully
+
+    This specifically tests lines 184-202 in review.py:
+    - Line 192: Logging coder fix session start
+    - Line 195-203: Create agent prompt with feedback
+    - Line 207: Set debug log directory
+    - Line 209-214: Run Claude session with timeout
+    """
+    # Sample feedback from reviewer
+    feedback = "Please add type hints and fix formatting issues"
+
+    # Mock run_claude_session to simulate successful execution
+    with patch("rasen.review.run_claude_session") as mock_session:
+        # Set up successful session result with session_id attribute
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.session_id = "test-session-12345678"
+        mock_session.return_value = mock_result
+
+        # Run coder fix session
+        _run_coder_fix_session(
+            test_config_with_review,
+            sample_subtask,
+            feedback,
+            git_repo,
+        )
+
+        # Assertions
+        assert mock_session.called, "run_claude_session should have been called"
+        assert mock_session.call_count == 1, "Should be called exactly once"
+
+        # Verify the call arguments
+        call_args = mock_session.call_args
+
+        # First positional argument should be the prompt
+        prompt = call_args[0][0]
+        assert isinstance(prompt, str), "First argument should be prompt string"
+
+        # Verify prompt contains feedback
+        assert feedback in prompt, "Prompt should contain reviewer feedback"
+        assert "Fix review issues" in prompt, "Prompt should contain fix description"
+        assert sample_subtask.id in prompt, "Prompt should contain subtask ID"
+
+        # Second positional argument should be project_dir
+        project_dir_arg = call_args[0][1]
+        assert project_dir_arg == git_repo, "Project directory should be passed correctly"
+
+        # Third positional argument should be timeout
+        timeout_arg = call_args[0][2]
+        assert timeout_arg == test_config_with_review.orchestrator.session_timeout_seconds, (
+            "Session timeout should be passed correctly"
+        )
+
+        # Keyword arguments should include debug_log_dir
+        assert "debug_log_dir" in call_args[1], "debug_log_dir should be passed"
+        debug_log_dir = call_args[1]["debug_log_dir"]
+        expected_debug_dir = git_repo / ".rasen" / "debug_logs"
+        assert debug_log_dir == expected_debug_dir, "Debug log directory should be correct"
+
+
+def test_coder_fix_session_with_no_feedback(
+    test_config_with_review: Config,
+    sample_subtask: Subtask,
+    git_repo: Path,
+) -> None:
+    """Test _run_coder_fix_session handles None feedback gracefully.
+
+    This tests the coder fix session when feedback is None.
+    It verifies:
+    - run_claude_session is still called
+    - Prompt contains "See previous feedback" fallback message
+    - Session completes successfully with None feedback
+    """
+    # Mock run_claude_session to simulate successful execution
+    with patch("rasen.review.run_claude_session") as mock_session:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.session_id = "test-session-87654321"
+        mock_session.return_value = mock_result
+
+        # Run coder fix session with None feedback
+        _run_coder_fix_session(
+            test_config_with_review,
+            sample_subtask,
+            feedback=None,
+            project_dir=git_repo,
+        )
+
+        # Assertions
+        assert mock_session.called, "run_claude_session should have been called"
+
+        # Verify prompt contains fallback message
+        call_args = mock_session.call_args
+        prompt = call_args[0][0]
+        assert "See previous feedback" in prompt, (
+            "Prompt should contain fallback message when feedback is None"
+        )
+
+
+def test_coder_fix_session_handles_session_error(
+    test_config_with_review: Config,
+    sample_subtask: Subtask,
+    git_repo: Path,
+) -> None:
+    """Test _run_coder_fix_session handles SessionError properly.
+
+    This tests the error handling in _run_coder_fix_session (line 218-220).
+    It verifies:
+    - When run_claude_session raises SessionError
+    - _run_coder_fix_session catches it and logs error
+    - Function re-raises SessionError (line 220) to propagate to caller
+
+    This specifically tests lines 218-220 in review.py:
+    - Line 218: Catch SessionError exception
+    - Line 219: Log error about coder fix session failure
+    - Line 220: Re-raise SessionError to caller
+    """
+    feedback = "Fix the formatting"
+
+    # Mock run_claude_session to raise SessionError
+    with patch("rasen.review.run_claude_session") as mock_session:
+        mock_session.side_effect = SessionError("Mock coder session error")
+
+        # Run coder fix session - should re-raise SessionError
+        with pytest.raises(SessionError, match="Mock coder session error"):
+            _run_coder_fix_session(
+                test_config_with_review,
+                sample_subtask,
+                feedback,
+                git_repo,
+            )
+
+        # Verify the session was called
         assert mock_session.called, "run_claude_session should have been called"
 
 

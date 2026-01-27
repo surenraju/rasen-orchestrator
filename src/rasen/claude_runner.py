@@ -33,8 +33,11 @@ def run_claude_session(
     prompt_file: Path,
     project_dir: Path,
     timeout_seconds: int = 1800,  # 30 minutes default
-) -> subprocess.CompletedProcess[bytes]:
-    """Run a Claude Code CLI session.
+) -> subprocess.CompletedProcess[str]:
+    """Run a Claude Code CLI session in non-interactive mode.
+
+    Uses --print flag to run Claude Code in non-interactive mode, processing
+    the prompt and exiting without requiring user interaction.
 
     Args:
         prompt_file: Path to prompt markdown file
@@ -48,11 +51,18 @@ def run_claude_session(
         SessionError: If Claude Code CLI fails or times out
     """
     try:
+        # Read prompt content
+        prompt_content = prompt_file.read_text()
+
+        # Run claude chat with --print flag for non-interactive execution
+        # Use --permission-mode bypassPermissions to auto-approve tool operations
+        # Pipe prompt content via stdin
         result = subprocess.run(
-            ["claude", "chat", "--file", str(prompt_file)],
+            ["claude", "chat", "--print", "--permission-mode", "bypassPermissions"],
+            input=prompt_content,
+            text=True,
             cwd=project_dir,
             timeout=timeout_seconds,
-            capture_output=False,  # Show output to user in real-time
             check=False,  # Don't raise on non-zero exit
         )
         return result

@@ -1,15 +1,7 @@
 # 螺旋 RASEN - Agent Orchestrator
 
-```
-╔═══════════════════════════════════════════════════════════╗
-║   螺旋  RASEN                                             ║
-║   Agent Orchestrator                                      ║
-║                                                           ║
-║   "The spiral that never stops turning"                   ║
-╚═══════════════════════════════════════════════════════════╝
-```
 
-**Name Origin:** **RA**ju + **S**ur**EN** = RASEN (螺旋 = Spiral in Japanese)
+**Name Origin:** RASEN (螺旋 = Spiral in Japanese)
 
 Production-ready orchestrator for long-running autonomous coding tasks using Claude Code CLI. Multi-agent workflow with intelligent validation, recovery, and human escalation.
 

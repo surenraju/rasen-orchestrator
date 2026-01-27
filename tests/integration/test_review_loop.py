@@ -32,7 +32,7 @@ from rasen.config import (
 )
 from rasen.events import Event
 from rasen.models import Subtask
-from rasen.review import run_review_loop
+from rasen.review import _run_reviewer_session, run_review_loop
 
 
 @pytest.fixture
@@ -383,6 +383,122 @@ def test_review_loop_requests_changes_then_approves(
             assert "test-subtask-1" in third_call_prompt, (
                 "Third call should be reviewer re-review with subtask ID"
             )
+
+
+def test_reviewer_session_parses_events(
+    test_config_with_review: Config,
+    sample_subtask: Subtask,
+    git_repo: Path,
+) -> None:
+    """Test _run_reviewer_session event parsing.
+
+    This tests the event parsing logic in _run_reviewer_session (lines 161-175).
+    It verifies:
+    - review.approved event → ReviewResult(approved=True)
+    - review.changes_requested event → ReviewResult(approved=False, feedback=payload)
+    - No events or unrecognized events → default to approved (fail-open)
+
+    This specifically tests lines 161-175 in review.py:
+    - Line 164: Parse events from session output
+    - Line 167-171: Check for approval or changes requested
+    - Line 174-175: Default to approved if no clear signal
+    """
+    # Get baseline commit
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    baseline_commit = result.stdout.strip()
+
+    # Test 1: review.approved event
+    with patch("rasen.review.run_claude_session") as mock_session:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_session.return_value = mock_result
+
+        with patch("rasen.review.parse_events") as mock_parse:
+            # Return approval event
+            mock_parse.return_value = [Event(topic="review.approved", payload="LGTM")]
+
+            result = _run_reviewer_session(
+                test_config_with_review,
+                sample_subtask,
+                git_repo,
+                baseline_commit,
+            )
+
+            assert result.approved is True, "Should be approved for review.approved event"
+            assert result.feedback is None, "Feedback should be None for approval"
+
+    # Test 2: review.changes_requested event
+    with patch("rasen.review.run_claude_session") as mock_session:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_session.return_value = mock_result
+
+        with patch("rasen.review.parse_events") as mock_parse:
+            # Return changes requested event with feedback
+            mock_parse.return_value = [
+                Event(
+                    topic="review.changes_requested",
+                    payload="Please add type hints and fix formatting",
+                )
+            ]
+
+            result = _run_reviewer_session(
+                test_config_with_review,
+                sample_subtask,
+                git_repo,
+                baseline_commit,
+            )
+
+            assert result.approved is False, "Should not be approved for changes_requested"
+            assert result.feedback == "Please add type hints and fix formatting", (
+                "Feedback should match event payload"
+            )
+
+    # Test 3: No events (default to approved)
+    with patch("rasen.review.run_claude_session") as mock_session:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_session.return_value = mock_result
+
+        with patch("rasen.review.parse_events") as mock_parse:
+            # Return no events
+            mock_parse.return_value = []
+
+            result = _run_reviewer_session(
+                test_config_with_review,
+                sample_subtask,
+                git_repo,
+                baseline_commit,
+            )
+
+            assert result.approved is True, "Should default to approved when no events"
+            assert result.feedback is None, "Feedback should be None for default approval"
+
+    # Test 4: Unrecognized event (default to approved)
+    with patch("rasen.review.run_claude_session") as mock_session:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_session.return_value = mock_result
+
+        with patch("rasen.review.parse_events") as mock_parse:
+            # Return unrecognized event
+            mock_parse.return_value = [Event(topic="build.done", payload="tests: pass, lint: pass")]
+
+            result = _run_reviewer_session(
+                test_config_with_review,
+                sample_subtask,
+                git_repo,
+                baseline_commit,
+            )
+
+            assert result.approved is True, "Should default to approved for unrecognized events"
+            assert result.feedback is None, "Feedback should be None for default approval"
 
 
 def test_review_loop_exceeds_max_iterations(

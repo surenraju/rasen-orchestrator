@@ -62,10 +62,7 @@ def init(ctx: click.Context, task: str) -> None:
     )
 
     click.echo("\n✅ Task initialized")
-    click.echo(
-        f"   Task description saved to: {task_file}\n"
-        f"   State directory: {rasen_dir}\n"
-    )
+    click.echo(f"   Task description saved to: {task_file}\n   State directory: {rasen_dir}\n")
     click.echo("Run 'rasen run' to start the orchestration loop")
 
 
@@ -140,7 +137,7 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
             task_description = task_file.read_text().strip()
         else:
             click.echo(
-                'Error: No task found. Run \'rasen init --task "description"\' first.',
+                "Error: No task found. Run 'rasen init --task \"description\"' first.",
                 err=True,
             )
             ctx.exit(1)

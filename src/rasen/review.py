@@ -129,7 +129,6 @@ def _run_reviewer_session(
     # Render reviewer prompt
     prompt = create_agent_prompt(
         "reviewer",
-        Path("prompts"),
         subtask_id=subtask.id,
         subtask_description=subtask.description,
         git_diff=git_diff,
@@ -187,7 +186,6 @@ def _run_coder_fix_session(
     # Render coder prompt with review feedback
     prompt = create_agent_prompt(
         "coder",
-        Path("prompts"),
         subtask_id=subtask.id,
         subtask_description=f"Fix review issues: {feedback or 'See previous feedback'}",
         attempt_number="review-fix",

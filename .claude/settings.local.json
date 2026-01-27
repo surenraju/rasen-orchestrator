@@ -23,7 +23,8 @@
       "Bash(python3:*)",
       "Bash(ls:*)",
       "Bash(python:*)",
-      "Bash(uv pip install:*)"
+      "Bash(uv pip install:*)",
+      "Bash(/Users/surenraju/Documents/work/rasen-orchestrator/dist/rasen:*)"
     ]
   }
 }

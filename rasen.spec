@@ -8,8 +8,9 @@ from pathlib import Path
 project_root = Path(SPECPATH)
 
 # Collect data files
+# Prompts are now bundled in the rasen package (src/rasen/prompts/)
 datas = [
-    (str(project_root / 'prompts'), 'prompts'),  # Include prompt templates
+    (str(project_root / 'src' / 'rasen' / 'prompts'), 'rasen/prompts'),  # Include prompt templates
 ]
 
 # Collect package data

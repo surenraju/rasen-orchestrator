@@ -267,7 +267,6 @@ class OrchestrationLoop:
 
         prompt = create_agent_prompt(
             "coder",
-            Path("prompts"),
             subtask_id=subtask_id,
             subtask_description=description,
             attempt_number=str(attempt_number),
@@ -321,7 +320,6 @@ class OrchestrationLoop:
         # Create initializer prompt
         prompt = create_agent_prompt(
             "initializer",
-            Path("prompts"),
             task_description=task_description,
         )
 

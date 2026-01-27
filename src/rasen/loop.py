@@ -17,6 +17,8 @@ from rasen.models import (
     LoopState,
     SessionResult,
     SessionStatus,
+    Subtask,
+    SubtaskStatus,
     TerminationReason,
 )
 from rasen.prompts import create_agent_prompt
@@ -122,16 +124,35 @@ class OrchestrationLoop:
                 # Get next subtask
                 subtask = self.plan_store.get_next_subtask()
                 if not subtask:
-                    # All subtasks complete - run QA validation
-                    logger.info("All subtasks complete, starting QA validation")
-
+                    # All subtasks complete - run validation
+                    logger.info("All subtasks complete")
                     plan = self.plan_store.load()
+                    baseline_commit = self._get_commit_hash()
+
+                    # Run Review loop if enabled and NOT per-subtask
+                    if self.config.review.enabled and not self.config.review.per_subtask:
+                        logger.info("Running Review validation for entire build")
+                        build_subtask = Subtask(
+                            id="build-complete",
+                            description="Complete build review",
+                            status=SubtaskStatus.COMPLETED,
+                        )
+                        review_passed = run_review_loop(
+                            self.config, build_subtask, self.project_dir, baseline_commit
+                        )
+                        if not review_passed:
+                            logger.error("Build-wide review failed")
+                            self.status_store.mark_failed("Review validation failed")
+                            return TerminationReason.ERROR
+
+                    # Run QA loop if enabled
                     if plan and self.config.qa.enabled:
+                        logger.info("Running QA validation for entire build")
                         qa_passed = run_qa_loop(
                             self.config,
                             plan,
                             self.project_dir,
-                            self.baseline_commit,
+                            baseline_commit,
                             self.task_description,
                         )
 
@@ -141,6 +162,7 @@ class OrchestrationLoop:
                             return TerminationReason.ERROR
 
                     # All done!
+                    logger.info("All validation complete - task finished!")
                     self.status_store.mark_completed()
                     return TerminationReason.COMPLETE
 
@@ -184,9 +206,10 @@ class OrchestrationLoop:
                     if session_result.status == SessionStatus.COMPLETE:
                         # Validate completion
                         if validate_completion(session_result.events, self.config.backpressure):
-                            # Run review loop if enabled
+                            # Run per-subtask review if enabled
                             review_passed = True
-                            if self.config.review.enabled:
+                            if self.config.review.enabled and self.config.review.per_subtask:
+                                logger.info(f"Running per-subtask review for {subtask.id}")
                                 subtask_baseline = commit_before
                                 review_passed = run_review_loop(
                                     self.config, subtask, self.project_dir, subtask_baseline
@@ -197,8 +220,11 @@ class OrchestrationLoop:
                                 self.recovery_store.record_good_commit(
                                     self._get_commit_hash(), subtask.id
                                 )
+                                review_msg = (
+                                    "and reviewed" if self.config.review.per_subtask else ""
+                                )
                                 logger.info(
-                                    f"Subtask {subtask.id} completed and reviewed successfully"
+                                    f"Subtask {subtask.id} completed {review_msg} successfully"
                                 )
                             else:
                                 logger.warning(f"Subtask {subtask.id} completed but failed review")

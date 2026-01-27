@@ -79,6 +79,7 @@ class ReviewConfig(BaseModel):
     """Review loop settings (Coder ↔ Reviewer)."""
 
     enabled: bool = True
+    per_subtask: bool = False  # False = review after all subtasks (like Auto-Claude)
     max_loops: int = 3
 
 
@@ -86,6 +87,7 @@ class QAConfig(BaseModel):
     """QA loop settings (Coder ↔ QA)."""
 
     enabled: bool = True
+    per_subtask: bool = False  # False = QA after all subtasks (like Auto-Claude)
     max_iterations: int = 50
     recurring_issue_threshold: int = 3
 

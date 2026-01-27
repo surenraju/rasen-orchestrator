@@ -80,16 +80,20 @@ agents:
 
   reviewer:
     prompt: prompts/reviewer.md
-    read_only: true  # Reviewer cannot modify files
-    enabled: true    # Run code review after each subtask
-    max_iterations: 3  # Max review loops before escalation
+    read_only: true       # Reviewer cannot modify files
+    enabled: true         # Enable code review
+    per_subtask: false    # false = review after all subtasks (like Auto-Claude)
+                          # true = review each subtask individually (slower, catches issues early)
+    max_iterations: 3     # Max review loops before escalation
 
   qa:
     prompt: prompts/qa.md
-    read_only: true  # QA cannot modify files
-    enabled: true    # Run QA validation after all subtasks
-    max_iterations: 50  # Max QA loops before escalation
-    recurring_issue_threshold: 3  # Escalate after N occurrences
+    read_only: true                # QA cannot modify files
+    enabled: true                  # Enable QA validation
+    per_subtask: false             # false = QA after all subtasks (recommended, like Auto-Claude)
+                                   # true = QA each subtask (not recommended, too slow)
+    max_iterations: 50             # Max QA loops before escalation
+    recurring_issue_threshold: 3   # Escalate after N occurrences of same issue
 
 # Session settings
 session:

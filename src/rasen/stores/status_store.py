@@ -17,6 +17,7 @@ class StatusInfo(BaseModel):
     iteration: int
     subtask_id: str | None
     subtask_description: str | None
+    current_phase: str = "Coding"  # e.g., "Coding", "Review 2/3", "QA 5/50"
     last_activity: datetime = Field(default_factory=lambda: datetime.now(UTC))
     status: str  # "running", "paused", "completed", "failed"
     total_commits: int = 0

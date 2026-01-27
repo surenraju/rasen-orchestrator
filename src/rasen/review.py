@@ -13,6 +13,7 @@ from rasen.git import get_git_diff
 from rasen.logging import get_logger
 from rasen.models import Subtask
 from rasen.prompts import create_agent_prompt
+from rasen.stores.status_store import StatusStore
 
 logger = get_logger(__name__)
 
@@ -64,7 +65,16 @@ def run_review_loop(
 
     logger.info(f"Starting review loop for subtask {subtask.id} (max {max_loops} loops)")
 
+    # Update status to show review phase
+    status_store = StatusStore(project_dir / ".rasen" / "status.json")
+
     for iteration in range(1, max_loops + 1):
+        # Update status with current review iteration
+        status = status_store.load()
+        if status:
+            status.current_phase = f"Review {iteration}/{max_loops}"
+            status_store.update(status)
+
         logger.info(f"Review iteration {iteration}/{max_loops}")
 
         # Run reviewer session (read-only)

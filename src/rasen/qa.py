@@ -16,6 +16,7 @@ from rasen.git import get_git_diff
 from rasen.logging import get_logger
 from rasen.models import ImplementationPlan
 from rasen.prompts import create_agent_prompt
+from rasen.stores.status_store import StatusStore
 
 logger = get_logger(__name__)
 
@@ -134,7 +135,16 @@ def run_qa_loop(
 
     logger.info(f"Starting QA loop (max {max_iterations} iterations)")
 
+    # Update status to show QA phase
+    status_store = StatusStore(project_dir / ".rasen" / "status.json")
+
     for iteration in range(1, max_iterations + 1):
+        # Update status with current QA iteration
+        status = status_store.load()
+        if status:
+            status.current_phase = f"QA {iteration}/{max_iterations}"
+            status_store.update(status)
+
         logger.info(f"QA iteration {iteration}/{max_iterations}")
 
         # Run QA session (read-only)

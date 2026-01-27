@@ -118,10 +118,26 @@ uv run rasen --help
 # Initialize new task
 uv run rasen init --task "Implement user authentication"
 
+# Output:
+# ✅ Task initialized
+#    Task: .rasen/task.txt
+#    Config: .rasen/rasen-config.yml
+#    Prompts: .rasen/prompts/
+#    State: .rasen/
+#
+# 📝 Customize agent prompts in .rasen/prompts/ before running
+# ⚙️  Adjust settings in .rasen/rasen-config.yml
+
 # This creates:
-# - .rasen/ directory
-# - implementation_plan.json (to be created by initializer agent)
-# - Placeholder for future agent sessions
+# .rasen/
+# ├── task.txt                 # Task description
+# ├── rasen-config.yml         # Customizable settings
+# ├── prompts/                 # Customizable agent prompts
+# │   ├── initializer.md       # Session 1: Create plan
+# │   ├── coder.md             # Implement subtasks
+# │   ├── reviewer.md          # Code review
+# │   └── qa.md                # QA validation
+# └── status.json              # Runtime state
 ```
 
 ### Run Orchestration Loop
@@ -189,6 +205,140 @@ uv run rasen resume --background
 - ✅ Real-time status monitoring
 
 See [Background Mode Guide](docs/background-mode.md) for complete usage details.
+
+---
+
+## Customization
+
+RASEN allows full customization of agent prompts and settings **per project**. Customize before running to add project-specific instructions.
+
+### Customize Agent Prompts
+
+After `rasen init`, edit prompts in `.rasen/prompts/` to add project-specific rules:
+
+**Example: Customize Coder prompt**
+
+```bash
+# Edit the coder prompt
+vi .rasen/prompts/coder.md
+```
+
+Add project-specific requirements:
+
+```markdown
+# Coding Session - Subtask Implementation
+
+## Project-Specific Rules ⚠️
+- **ALWAYS use TypeScript strict mode** - no `any` types allowed
+- **Error handling**: Use our custom `AppError` class, never throw raw strings
+- **Logging**: Use `logger.info/warn/error`, NEVER use console.log
+- **Testing**: Write unit tests in `__tests__/` directory
+- **Comments**: Add JSDoc for all public functions
+
+## Current Subtask
+**ID:** {subtask_id}
+**Description:** {subtask_description}
+...
+```
+
+**Available Prompts:**
+
+| Prompt | Agent | Purpose | Customization Ideas |
+|--------|-------|---------|---------------------|
+| `initializer.md` | Initializer | Creates implementation plan | Add complexity guidelines, subtask templates |
+| `coder.md` | Coder | Implements subtasks | Add code style rules, testing requirements |
+| `reviewer.md` | Reviewer | Code review validation | Add review checklist, specific concerns |
+| `qa.md` | QA | Acceptance validation | Add QA criteria, edge cases to check |
+
+**Benefits:**
+- ✅ Prompts loaded **from .rasen/prompts/ first**, fallback to bundled
+- ✅ **No rebuild needed** - edit anytime, changes apply immediately
+- ✅ **Per-project customization** - different rules for different projects
+- ✅ **Version control friendly** - commit `.rasen/` to share with team
+
+### Customize Settings
+
+Edit `.rasen/rasen-config.yml` to adjust orchestration behavior:
+
+```yaml
+# Agent settings
+agents:
+  initializer:
+    prompt: prompts/initializer.md
+    read_only: false
+  coder:
+    prompt: prompts/coder.md
+    read_only: false
+  reviewer:
+    prompt: prompts/reviewer.md
+    read_only: true      # Reviewer cannot modify files
+  qa:
+    prompt: prompts/qa.md
+    read_only: true      # QA cannot modify files
+
+# Session settings
+session:
+  timeout_seconds: 1800  # 30 minutes (increase for complex tasks)
+  max_iterations: 100    # Max total iterations
+
+# Review loop settings (Coder ↔ Reviewer per subtask)
+review:
+  enabled: true          # Set to false to skip code review
+  max_iterations: 3      # Max review loops before escalation
+
+# QA loop settings (Coder ↔ QA after all subtasks)
+qa:
+  enabled: true          # Set to false to skip QA validation
+  max_iterations: 50     # Max QA loops before escalation
+
+# Stall detection
+stall:
+  max_no_commit_sessions: 3      # Abort if 3 sessions with no commits
+  max_consecutive_failures: 5    # Abort after 5 consecutive failures
+```
+
+**Common Customizations:**
+
+```yaml
+# For rapid prototyping (skip validation)
+review:
+  enabled: false
+qa:
+  enabled: false
+
+# For complex tasks (longer timeout)
+session:
+  timeout_seconds: 3600  # 1 hour per session
+
+# For tight deadlines (fewer review iterations)
+review:
+  max_iterations: 1      # Accept after first review
+```
+
+### Workflow with Customization
+
+```bash
+# 1. Initialize task
+rasen init --task "Build user auth system"
+
+# 2. Customize prompts (add project rules)
+echo "## Project Rules
+- Use bcrypt for password hashing
+- JWT tokens with 24h expiration
+- Rate limit: 5 failed logins → lockout" >> .rasen/prompts/coder.md
+
+# 3. Customize settings (longer timeout for auth)
+vi .rasen/rasen-config.yml  # Set timeout_seconds: 3600
+
+# 4. Run with your custom configuration
+rasen run
+```
+
+**Tips:**
+- 💡 Start with defaults, customize as needed
+- 💡 Re-running `rasen init` **won't overwrite** existing prompts/config
+- 💡 Commit `.rasen/rasen-config.yml` and `.rasen/prompts/` to share team standards
+- 💡 Use `--skip-review` or `--skip-qa` flags to override config temporarily
 
 ---
 
@@ -300,18 +450,19 @@ Loop terminates → Human intervention required
 
 ```
 .rasen/
-├── implementation_plan.json     # Subtask tracking (agent writes)
+├── rasen-config.yml              # Customizable settings (created by init)
+├── task.txt                      # Task description
+├── prompts/                      # Customizable agent prompts (created by init)
+│   ├── initializer.md            # Session 1 prompt template
+│   ├── coder.md                  # Coding session prompt template
+│   ├── reviewer.md               # Code review prompt template
+│   └── qa.md                     # QA validation prompt template
+├── implementation_plan.json      # Subtask tracking (agent writes)
 ├── attempt_history.json          # Recovery tracking (orchestrator writes)
 ├── good_commits.json             # Rollback targets
 ├── memories.md                   # Cross-session memory (human-readable)
 ├── status.json                   # Real-time progress (for monitoring)
 └── prompt_*.md                   # Rendered prompts (per session)
-
-prompts/
-├── initializer.md                # Session 1 prompt template
-├── coder.md                      # Coding session prompt template
-├── reviewer.md                   # Code review prompt template
-└── qa.md                         # QA validation prompt template
 
 QA_ESCALATION.md                  # Created when QA detects recurring issues
 ```

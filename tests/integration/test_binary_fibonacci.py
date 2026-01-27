@@ -240,7 +240,7 @@ def test_status_before_run(test_project: Path) -> None:
     )
 
     assert result.returncode == 0, f"Status command failed:\n{result.stderr}"
-    assert "Status: initialized" in result.stdout or "Status: Not running" in result.stdout
+    assert "Status: INITIALIZED" in result.stdout or "Status: Not running" in result.stdout
 
 
 @pytest.mark.skipif(

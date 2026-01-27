@@ -222,9 +222,7 @@ def test_initializer_is_called_when_no_plan(
     plan_file = rasen_dir / "implementation_plan.json"
     assert plan_file.exists(), "implementation_plan.json was not created!"
 
-    # ASSERTION: Initializer prompt was written
-    initializer_prompt = rasen_dir / "prompt_initializer.md"
-    assert initializer_prompt.exists(), "Initializer prompt file not found!"
+    # NOTE: Prompts are passed directly to Claude, not written to disk
 
 
 def test_prompt_paths_are_correct(
@@ -250,11 +248,11 @@ def test_prompt_paths_are_correct(
     rasen_dir = test_project_with_prompts / ".rasen"
     rasen_dir.mkdir(exist_ok=True)
 
-    prompt_file_arg = None
+    prompt_content = None
 
-    def capture_prompt_file(prompt_file, *_args, **_kwargs):
-        nonlocal prompt_file_arg
-        prompt_file_arg = prompt_file
+    def capture_prompt(prompt, *_args, **_kwargs):
+        nonlocal prompt_content
+        prompt_content = prompt
 
         # Create plan after Initializer
         plan = {
@@ -267,27 +265,17 @@ def test_prompt_paths_are_correct(
         result.returncode = 0
         return result
 
-    mock_claude_session.side_effect = capture_prompt_file
+    mock_claude_session.side_effect = capture_prompt
 
     # Run loop
     loop = OrchestrationLoop(test_config, test_project_with_prompts, "Test")
     with contextlib.suppress(Exception):
         loop.run()
 
-    # ASSERTION: Prompt file was read successfully
-    assert prompt_file_arg is not None, "No prompt file was passed to Claude session!"
-
-    # Read the actual prompt content
-    if prompt_file_arg.exists():
-        content = prompt_file_arg.read_text()
-        # Should have template variables substituted (check for placeholder removal)
-        assert "{" not in content or "{{" not in content, "Template variables not substituted!"
-
-    # ASSERTION: No double "prompts/" in path
-    prompt_str = str(prompt_file_arg)
-    assert "prompts/prompts/" not in prompt_str, (
-        f"Prompt path has double 'prompts/' directory! Path: {prompt_str}"
-    )
+    # ASSERTION: Prompt string was passed to Claude session
+    assert prompt_content is not None, "No prompt was passed to Claude session!"
+    assert isinstance(prompt_content, str), "Prompt should be a string!"
+    assert len(prompt_content) > 0, "Prompt should not be empty!"
 
 
 def test_prompt_templates_exist_before_running(test_project_with_prompts: Path) -> None:

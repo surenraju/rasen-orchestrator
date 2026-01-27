@@ -212,11 +212,9 @@ def test_orchestration_from_directory_without_prompts(tmp_path: Path):
                 )
             # Other errors are OK for this test (we just care about prompt loading)
 
-    # Verify initializer prompt was created
-    initializer_prompt = rasen_dir / "prompt_initializer.md"
-    assert initializer_prompt.exists(), (
-        "Initializer prompt should have been created in .rasen/ directory"
-    )
+    # NOTE: Prompts are now passed directly to Claude, not written to .rasen/
+    # The orchestration ran successfully without FileNotFoundError, which proves
+    # that prompts were loaded from the bundled package resources
 
     # Verify plan was created (means orchestration actually ran)
     plan_file = rasen_dir / "implementation_plan.json"

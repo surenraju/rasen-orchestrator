@@ -93,7 +93,9 @@ class OrchestrationLoop:
                 # Session 1: Check if plan exists, if not run Initializer
                 plan = self.plan_store.load()
                 if not plan:
-                    logger.info("No plan found, running Initializer agent (Session 1)")
+                    logger.info(
+                        f"No plan found, running Initializer (Session {self.state.iteration})"
+                    )
 
                     if not self.task_description:
                         logger.error("No task description provided for initialization")
@@ -111,7 +113,10 @@ class OrchestrationLoop:
                             self.status_store.mark_failed("Plan creation failed")
                             return TerminationReason.ERROR
 
-                        logger.info(f"Plan created with {len(plan.subtasks)} subtasks")
+                        logger.info(
+                            f"Session {self.state.iteration}: "
+                            f"Plan created with {len(plan.subtasks)} subtasks"
+                        )
 
                         # Delay before starting subtasks
                         time.sleep(self.config.orchestrator.session_delay_seconds)
@@ -224,6 +229,7 @@ class OrchestrationLoop:
                                     "and reviewed" if self.config.review.per_subtask else ""
                                 )
                                 logger.info(
+                                    f"Session {self.state.iteration}: "
                                     f"Subtask {subtask.id} completed {review_msg} successfully"
                                 )
                             else:
@@ -344,7 +350,9 @@ class OrchestrationLoop:
         Returns:
             SessionResult with status and events
         """
-        logger.info(f"Running Initializer for task: {task_description}")
+        logger.info(
+            f"Session {self.state.iteration}: Running Initializer for task: {task_description}"
+        )
 
         # Create initializer prompt
         prompt = create_agent_prompt(

@@ -109,6 +109,9 @@ HUMAN_INTERVENTION
 Auto-Claude/
 ralph-orchestrator/
 
+# Integration test directory (working directory for testing)
+integration-tests/
+
 # BMAD agent artifacts
 _bmad*/
 .bmad/

@@ -12,7 +12,7 @@ from rasen.prompts import create_agent_prompt
 
 
 def test_init_creates_config_file(tmp_path: Path) -> None:
-    """Test that rasen init creates rasen-config.yml."""
+    """Test that rasen init creates config.yaml."""
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -20,8 +20,8 @@ def test_init_creates_config_file(tmp_path: Path) -> None:
 
         assert result.exit_code == 0, f"Failed: {result.output}"
 
-        config_file = Path(".rasen/rasen-config.yml")
-        assert config_file.exists(), "rasen-config.yml was not created"
+        config_file = Path(".rasen/config.yaml")
+        assert config_file.exists(), "config.yaml was not created"
 
         # Verify config structure
         config_data = yaml.safe_load(config_file.read_text())
@@ -139,18 +139,18 @@ def test_init_output_shows_customization_instructions(tmp_path: Path) -> None:
         assert "Config:" in result.output
         assert "Prompts:" in result.output
         assert "Customize agent prompts" in result.output
-        assert "rasen-config.yml" in result.output
+        assert "config.yaml" in result.output
 
 
 def test_config_file_has_correct_defaults(tmp_path: Path) -> None:
-    """Test that rasen-config.yml has sensible defaults."""
+    """Test that config.yaml has sensible defaults."""
 
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(main, ["init", "--task", "Test task"])
         assert result.exit_code == 0
 
-        config_file = Path(".rasen/rasen-config.yml")
+        config_file = Path(".rasen/config.yaml")
         config = yaml.safe_load(config_file.read_text())
 
         # Verify session defaults
@@ -183,7 +183,7 @@ def test_prompt_paths_in_config(tmp_path: Path) -> None:
         result = runner.invoke(main, ["init", "--task", "Test task"])
         assert result.exit_code == 0
 
-        config_file = Path(".rasen/rasen-config.yml")
+        config_file = Path(".rasen/config.yaml")
         config = yaml.safe_load(config_file.read_text())
 
         # Verify prompt paths
@@ -203,7 +203,7 @@ def test_multiple_inits_preserve_state(tmp_path: Path) -> None:
         assert result.exit_code == 0
 
         # Modify config
-        config_file = Path(".rasen/rasen-config.yml")
+        config_file = Path(".rasen/config.yaml")
         config = yaml.safe_load(config_file.read_text())
         config["session"]["timeout_seconds"] = 3600  # Change to 1 hour
         config_file.write_text(yaml.dump(config))

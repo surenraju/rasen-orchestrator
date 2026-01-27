@@ -89,7 +89,7 @@ rasen init --task "Implement user authentication"
 
 # Creates:
 # .rasen/
-# ├── rasen-config.yml    # Customizable settings
+# ├── config.yaml    # Customizable settings
 # ├── prompts/            # Editable agent prompts
 # │   ├── initializer.md
 # │   ├── coder.md
@@ -121,7 +121,7 @@ rasen status  # Shows: progress bar, current task, commits, recent activity
 
 ### Customize Configuration
 
-Edit `.rasen/rasen-config.yml`:
+Edit `.rasen/config.yaml`:
 
 ```yaml
 agents:

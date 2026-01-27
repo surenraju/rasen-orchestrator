@@ -61,8 +61,8 @@ def init(ctx: click.Context, task: str) -> None:
                 content = Path(str(bundled_prompt)).read_text(encoding="utf-8")
             local_prompt.write_text(content)
 
-    # Create rasen-config.yml with default settings
-    config_file = rasen_dir / "rasen-config.yml"
+    # Create config.yaml with default settings
+    config_file = rasen_dir / "config.yaml"
     if not config_file.exists():
         config_template = """# RASEN Configuration
 # Customize agent prompts and behavior in .rasen/prompts/ directory
@@ -132,7 +132,7 @@ stall:
     click.echo(f"   Prompts: {prompts_dir}/")
     click.echo(f"   State: {rasen_dir}/\n")
     click.echo("📝 Customize agent prompts in .rasen/prompts/ before running")
-    click.echo("⚙️  Adjust settings in .rasen/rasen-config.yml")
+    click.echo("⚙️  Adjust settings in .rasen/config.yaml")
     click.echo("\nRun 'rasen run' to start the orchestration loop")
 
 
@@ -155,7 +155,12 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
 
     project_dir = Path(config.project.root)
     pid_file = Path(config.background.pid_file)
-    log_file = Path(config.background.log_file)
+
+    # Setup logging - always log to file
+    if background:
+        log_file = Path(config.background.log_file)
+    else:
+        log_file = project_dir / "orchestration.log"
 
     # Check if already running
     from rasen.daemon import get_daemon_status  # noqa: PLC0415
@@ -167,7 +172,7 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
         return
 
     # Setup logging
-    setup_logging(log_file if background else None)
+    setup_logging(log_file)
 
     msg = (
         f"Running orchestrator (background={background}, "

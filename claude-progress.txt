@@ -148,3 +148,95 @@ Subtask 2: Update loop.py to call record_attempt() after sessions
 - Determine success from session_result.status
 
 ---
+
+Session 3 - Subtask 2 Implementation (2026-01-28)
+Task: Update loop.py _run_session() to call recovery_store.record_attempt() after each session
+
+## Implementation Summary
+
+Successfully integrated attempt recording into the orchestration loop. Every session now records its outcome to the recovery store, building a history of approaches tried.
+
+## Changes Made
+
+1. **Extended AttemptRecord model** (src/rasen/models.py:63-72)
+   - Added `error_message: str | None = None` field
+   - Captures last 500 chars of error output for failed attempts
+   - Backwards compatible with existing records
+
+2. **Updated RecoveryStore.record_attempt()** (src/rasen/stores/recovery_store.py:40-68)
+   - Added `error_message` parameter
+   - Now stores error context for debugging and recovery hints
+   - Updated docstring to document new parameter
+
+3. **Integrated recording in loop._run_session()** (src/rasen/loop.py:336-350)
+   - Records attempt after session completes
+   - Captures:
+     - subtask_id: From method parameter
+     - session: From self.state.iteration
+     - success: True if SessionStatus.COMPLETE
+     - approach: From subtask.description
+     - commit_hash: Current commit if successful
+     - error_message: Last 500 chars of output if failed
+   - Happens after status determination, before returning
+
+4. **Comprehensive Test Suite**
+   - Created tests/test_loop_attempt_recording.py with 5 integration tests:
+     - test_run_session_records_successful_attempt
+     - test_run_session_records_failed_attempt
+     - test_run_session_records_blocked_attempt
+     - test_run_session_records_multiple_attempts
+     - test_run_session_records_different_subtasks
+   - Added 2 unit tests to tests/stores/test_recovery_store.py:
+     - test_record_attempt_with_error_message
+     - test_record_attempt_with_commit_hash
+   - All tests pass ✓
+
+## Quality Verification
+
+✓ All new tests pass (5 integration + 2 unit = 7/7)
+✓ All existing tests pass (140/140 when excluding pre-existing failures)
+✓ ruff format passes
+✓ ruff check passes (on modified files)
+✓ mypy passes (no type errors)
+✓ No regressions introduced
+✓ Commit created with descriptive message
+
+## Technical Notes
+
+**Error Message Capture Strategy:**
+- Captures last 500 chars of output when session fails
+- Provides context without storing entire output
+- Useful for recovery hints and debugging
+- None for successful attempts
+
+**Session Status Mapping:**
+- SessionStatus.COMPLETE → success=True
+- SessionStatus.BLOCKED → success=False
+- SessionStatus.FAILED → success=False
+- SessionStatus.CONTINUE → success=False
+
+**Commit Hash Recording:**
+- Only captured for successful attempts
+- Uses current commit hash at time of recording
+- Enables rollback to known-good states
+- None for failed attempts
+
+## Pre-existing Test Failures
+
+Note: 4 integration tests were already failing before this session:
+- test_initializer_is_called_when_no_plan
+- test_prompt_paths_are_correct
+- test_orchestration_from_directory_without_prompts
+- test_status_before_run
+
+These failures are due to mocking issues in the test setup (MagicMock passed where string expected). Not related to this subtask's changes.
+
+## Next Steps
+
+Subtask 3: Fix review.py to use recovery hints
+- Remove hardcoded `failed_approaches_section=''`
+- Pass recovery_store to run_coder_fix_session()
+- Call get_recovery_hints() to get formatted hints
+- Inject hints into coder prompt during review fix iterations
+
+---

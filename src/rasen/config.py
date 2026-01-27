@@ -129,13 +129,13 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def _transform_task_config(data: dict[str, Any]) -> dict[str, Any]:
-    """Transform .rasen/rasen-config.yml structure to match Config model.
+    """Transform .rasen/config.yaml structure to match Config model.
 
     Transforms nested agents.reviewer/agents.qa settings into separate
     review and qa top-level sections for compatibility with existing Config model.
 
     Args:
-        data: Raw YAML data from .rasen/rasen-config.yml
+        data: Raw YAML data from .rasen/config.yaml
 
     Returns:
         Transformed data matching Config model structure
@@ -178,7 +178,7 @@ def load_config(config_path: Path | None = None) -> Config:
 
     Priority (highest to lowest):
     1. Environment variables (RASEN_AGENT_MODEL, etc.)
-    2. .rasen/rasen-config.yml (task-specific config, if exists)
+    2. .rasen/config.yaml (task-specific config, if exists)
     3. rasen.yml (project-level config)
     4. Defaults
 
@@ -203,8 +203,8 @@ def load_config(config_path: Path | None = None) -> Config:
         except yaml.YAMLError as e:
             raise ConfigurationError(f"Invalid YAML in {project_config}: {e}") from e
 
-    # 2. Load task-specific config (.rasen/rasen-config.yml) and merge
-    task_config = Path(".rasen/rasen-config.yml")
+    # 2. Load task-specific config (.rasen/config.yaml) and merge
+    task_config = Path(".rasen/config.yaml")
     if task_config.exists():
         try:
             with task_config.open() as f:

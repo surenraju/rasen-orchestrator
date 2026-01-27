@@ -21,6 +21,7 @@ env/
 # Testing
 .pytest_cache/
 .coverage
+coverage.json
 htmlcov/
 .tox/
 coverage.xml
@@ -48,10 +49,15 @@ Thumbs.db
 
 # Project-specific
 CLAUDE.md
+CLAUDE.MD
 _bmad*
 docs/
 integration-tests/
 .rasen/
+
+# Reference implementations (cloned repos)
+Auto-Claude/
+ralph-orchestrator/
 
 # Environment variables
 .env

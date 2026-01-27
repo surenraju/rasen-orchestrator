@@ -1,0 +1,90 @@
+=== RASEN Orchestrator - Development Progress ===
+
+Session 1 - Initialization (2026-01-28)
+Task: Implement failed approaches tracking in orchestration loop
+
+## Problem Analysis
+
+The infrastructure for tracking failed approaches exists but is never used:
+- RecoveryStore has record_attempt() method but it's never called
+- loop.py retrieves failed_approaches but they're always empty
+- review.py and qa.py hardcode failed_approaches_section=''
+- Prompts have {failed_approaches_section} placeholder that's never populated
+
+This means agents have no memory of what approaches failed previously, leading to:
+- Repeating the same failed approaches
+- No learning from previous mistakes
+- Inefficient iteration loops
+
+## Solution Design
+
+Based on Auto-Claude's implementation pattern:
+
+1. **RecoveryStore Enhancement**
+   - Add get_recovery_hints() method to format attempt history
+   - Show last 3 attempts with approach + success/fail status
+   - Add warning: "Try a DIFFERENT approach" for failed attempts
+   - Format with ⚠️ warnings for visibility
+
+2. **Loop.py Integration**
+   - Call record_attempt() after each session in _run_session()
+   - Extract approach from subtask.description (simple string)
+   - Mark success based on session_result.status == SessionStatus.COMPLETE
+   - Include error message from events if session failed
+
+3. **Review/QA Loop Integration**
+   - Remove hardcoded empty strings for failed_approaches_section
+   - Pass recovery_store to fix functions
+   - Call get_recovery_hints() to get formatted hints
+   - Inject hints into coder prompt during fix iterations
+
+4. **Prompt Template Updates**
+   - Update coder.md to format hints section with warnings
+   - Show previous attempts clearly with success/fail indicators
+   - Use ⚠️ emoji for visibility when hints are present
+
+## Implementation Plan
+
+Created 12 subtasks:
+1. Add get_recovery_hints() method to RecoveryStore
+2. Update loop.py to call record_attempt() after sessions
+3. Fix review.py to use recovery hints
+4. Fix qa.py to use recovery hints
+5. Update coder.md prompt template
+6. Unit tests for RecoveryStore.get_recovery_hints()
+7. Unit tests for loop.py record_attempt() calls
+8. Integration test for full workflow
+9. Update function signatures to pass recovery_store
+10. Run full test suite with coverage check
+11. Run quality checks (ruff, mypy)
+12. Update this progress file with final summary
+
+## Key Design Decisions
+
+1. **Approach Extraction**: Use subtask.description directly as approach
+   - Simple and straightforward
+   - Already contains the approach being attempted
+   - No need for complex parsing
+
+2. **Success Criteria**: SessionStatus.COMPLETE determines success
+   - Clear boolean signal
+   - Aligns with existing loop logic
+   - No ambiguity
+
+3. **Hint Format**: Follow Auto-Claude pattern
+   - Proven to work in production
+   - Clear visual warnings with emojis
+   - Limited to last 3 attempts to avoid prompt bloat
+
+4. **Integration Points**:
+   - loop.py: Main coder sessions
+   - review.py: Review fix iterations
+   - qa.py: QA fix iterations
+   - All three need recovery context
+
+## Next Session
+
+Start with subtask-1: Implement get_recovery_hints() method in RecoveryStore.
+This is the foundation that other subtasks will build upon.
+
+---

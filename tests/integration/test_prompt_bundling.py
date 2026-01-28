@@ -190,7 +190,7 @@ def test_orchestration_from_directory_without_prompts(tmp_path: Path):
                 }
             ],
         }
-        plan_file = rasen_dir / "implementation_plan.json"
+        plan_file = rasen_dir / "state.json"
         plan_file.write_text(json.dumps(plan, indent=2))
 
         result = MagicMock()
@@ -217,7 +217,7 @@ def test_orchestration_from_directory_without_prompts(tmp_path: Path):
     # that prompts were loaded from the bundled package resources
 
     # Verify plan was created (means orchestration actually ran)
-    plan_file = rasen_dir / "implementation_plan.json"
+    plan_file = rasen_dir / "state.json"
     assert plan_file.exists(), "Plan should have been created by Initializer"
 
 

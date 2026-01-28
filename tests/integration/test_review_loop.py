@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from rasen.claude_runner import SessionRunResult
 from rasen.config import (
     AgentConfig,
     BackgroundConfig,
@@ -30,10 +31,30 @@ from rasen.config import (
     StallDetectionConfig,
     WorktreeConfig,
 )
-from rasen.events import Event
 from rasen.exceptions import SessionError
 from rasen.models import Subtask
 from rasen.review import _run_coder_fix_session, _run_reviewer_session, run_review_loop
+
+
+def _create_mock_session_result(
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+    session_id: str = "test-session-123",
+    input_tokens: int = 100,
+    output_tokens: int = 200,
+) -> SessionRunResult:
+    """Create a properly typed SessionRunResult for tests."""
+    return SessionRunResult(
+        args=["claude", "chat"],
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+        session_id=session_id,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=input_tokens + output_tokens,
+    )
 
 
 @pytest.fixture
@@ -173,42 +194,44 @@ def sample_subtask() -> Subtask:
     )
 
 
-@pytest.fixture
-def mock_reviewer_approved():
-    """Mock reviewer session that approves changes.
+def _create_state_json(
+    rasen_dir: Path,
+    subtask_id: str,
+    review_status: str = "pending",
+    review_feedback: list[str] | None = None,
+) -> None:
+    """Helper to create state.json with review state.
 
-    Returns a mock that simulates a successful reviewer session
-    that emits review.approved event.
+    Args:
+        rasen_dir: Path to .rasen directory
+        subtask_id: ID of the subtask
+        review_status: Review status (pending, approved, changes_requested)
+        review_feedback: List of feedback items if changes_requested
     """
-    with patch("rasen.review.run_claude_session") as mock:
-        result = MagicMock()
-        result.returncode = 0
-        mock.return_value = result
-
-        # Mock parse_events to return approval
-        with patch("rasen.review.parse_events") as mock_parse:
-            mock_parse.return_value = [Event(topic="review.approved", payload="LGTM")]
-            yield mock
-
-
-@pytest.fixture
-def mock_reviewer_changes_requested():
-    """Mock reviewer session that requests changes.
-
-    Returns a mock that simulates a reviewer session
-    that emits review.changes_requested event.
-    """
-    with patch("rasen.review.run_claude_session") as mock:
-        result = MagicMock()
-        result.returncode = 0
-        mock.return_value = result
-
-        # Mock parse_events to return changes requested
-        with patch("rasen.review.parse_events") as mock_parse:
-            mock_parse.return_value = [
-                Event(topic="review.changes_requested", payload="Please fix formatting")
-            ]
-            yield mock
+    plan = {
+        "task_name": "Test Task",
+        "subtasks": [
+            {
+                "id": subtask_id,
+                "description": "Implement test feature",
+                "status": "in_progress",
+                "attempts": 1,
+            }
+        ],
+        "review": {
+            "status": review_status,
+            "feedback": review_feedback or [],
+            "iteration": 1,
+            "last_reviewed_subtask": subtask_id,
+        },
+        "qa": {
+            "status": "pending",
+            "issues": [],
+            "iteration": 0,
+            "recurring_issues": [],
+        },
+    }
+    (rasen_dir / "state.json").write_text(json.dumps(plan, indent=2))
 
 
 def test_review_loop_approves_on_first_try(
@@ -235,40 +258,41 @@ def test_review_loop_approves_on_first_try(
     )
     baseline_commit = result.stdout.strip()
 
+    rasen_dir = git_repo / ".rasen"
+
     # Mock reviewer session to approve on first try
     with patch("rasen.review.run_claude_session") as mock_session:
         # Set up successful session result
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_session.return_value = mock_result
+        mock_result = _create_mock_session_result(returncode=0)
 
-        # Mock parse_events to return approval
-        with patch("rasen.review.parse_events") as mock_parse:
-            mock_parse.return_value = [Event(topic="review.approved", payload="LGTM")]
+        # Create implementation plan with approved status
+        # The mock session simulates Claude updating the JSON file
+        def session_side_effect(*_args: object, **_kwargs: object) -> SessionRunResult:
+            _create_state_json(rasen_dir, sample_subtask.id, "approved")
+            return mock_result
 
-            # Run review loop
-            result = run_review_loop(
-                test_config_with_review,
-                sample_subtask,
-                git_repo,
-                baseline_commit,
-            )
+        mock_session.side_effect = session_side_effect
 
-            # Assertions
-            assert result is True, "Review loop should return True when approved"
-            assert mock_session.call_count == 1, "Reviewer session should be called exactly once"
+        # Run review loop
+        result = run_review_loop(
+            test_config_with_review,
+            sample_subtask,
+            git_repo,
+            baseline_commit,
+        )
 
-            # Verify the prompt was created correctly (first call is reviewer)
-            call_args = mock_session.call_args_list[0]
-            prompt_text = call_args[0][0]  # First positional argument
-            assert "test-subtask-1" in prompt_text, "Subtask ID should be in prompt"
-            assert "Implement test feature" in prompt_text, (
-                "Subtask description should be in prompt"
-            )
+        # Assertions
+        assert result.passed is True, "Review loop should pass when approved"
+        assert mock_session.call_count == 1, "Reviewer session should be called exactly once"
 
-            # Verify no fix sessions were called (only one reviewer call)
-            # If there were fix sessions, we'd see more calls
-            assert mock_session.call_count == 1, "No coder fix sessions should be called"
+        # Verify the prompt was created correctly (first call is reviewer)
+        call_args = mock_session.call_args_list[0]
+        prompt_text = call_args[0][0]  # First positional argument
+        assert "test-subtask-1" in prompt_text, "Subtask ID should be in prompt"
+        assert "Implement test feature" in prompt_text, "Subtask description should be in prompt"
+
+        # Verify no fix sessions were called (only one reviewer call)
+        assert mock_session.call_count == 1, "No coder fix sessions should be called"
 
 
 def test_review_loop_requests_changes_then_approves(
@@ -285,12 +309,6 @@ def test_review_loop_requests_changes_then_approves(
     - Coder fix session is called once (to address feedback)
     - Feedback is passed correctly to the coder fix session
     - Review loop completes successfully after iteration
-
-    This tests lines 87-103 in review.py:
-    - Line 87-90: Logging changes requested with feedback
-    - Line 92-97: Check if max iterations reached
-    - Line 99-100: Run coder fix session with feedback
-    - Line 103: Delay between iterations
     """
     # Get baseline commit
     result = subprocess.run(
@@ -301,6 +319,8 @@ def test_review_loop_requests_changes_then_approves(
         text=True,
     )
     baseline_commit = result.stdout.strip()
+
+    rasen_dir = git_repo / ".rasen"
 
     # Track call sequence to control mock behavior
     call_count = 0
@@ -310,99 +330,83 @@ def test_review_loop_requests_changes_then_approves(
         nonlocal call_count
         call_count += 1
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
+        mock_result = _create_mock_session_result(returncode=0, session_id=f"session-{call_count}")
+
+        # First call: reviewer requests changes
+        if call_count == 1:
+            _create_state_json(
+                rasen_dir,
+                sample_subtask.id,
+                "changes_requested",
+                ["Please fix formatting and add type hints"],
+            )
+        # Second call: coder fix (no JSON change needed)
+        elif call_count == 2:
+            pass  # Coder doesn't update review state
+        # Third call: reviewer approves
+        else:
+            _create_state_json(rasen_dir, sample_subtask.id, "approved")
+
         return mock_result
 
     # Mock reviewer and coder sessions
     with patch("rasen.review.run_claude_session") as mock_session:
         mock_session.side_effect = mock_session_side_effect
 
-        # Mock parse_events to control review outcomes
-        parse_call_count = 0
+        # Run review loop
+        result = run_review_loop(
+            test_config_with_review,
+            sample_subtask,
+            git_repo,
+            baseline_commit,
+        )
 
-        def mock_parse_side_effect(_text):
-            """Return different events based on call sequence."""
-            nonlocal parse_call_count
-            parse_call_count += 1
+        # Assertions
+        assert result.passed is True, "Review loop should pass when eventually approved"
+        assert mock_session.call_count == 3, (
+            "Should have 3 calls: reviewer (changes requested), coder fix, reviewer (approved)"
+        )
 
-            # First call: reviewer requests changes
-            if parse_call_count == 1:
-                return [
-                    Event(
-                        topic="review.changes_requested",
-                        payload="Please fix formatting and add type hints",
-                    )
-                ]
-            # Second call: coder fix (no events expected from coder fix)
-            elif parse_call_count == 2:
-                return []
-            # Third call: reviewer approves
-            else:
-                return [Event(topic="review.approved", payload="LGTM, changes look good")]
+        # Verify the calls were made in correct order
+        call_args_list = mock_session.call_args_list
 
-        with patch("rasen.review.parse_events") as mock_parse:
-            mock_parse.side_effect = mock_parse_side_effect
+        # First call: reviewer session (should contain diff, subtask info)
+        first_call_prompt = call_args_list[0][0][0]
+        assert "test-subtask-1" in first_call_prompt, (
+            "First call should be reviewer with subtask ID"
+        )
+        assert "Implement test feature" in first_call_prompt, (
+            "First call should include subtask description"
+        )
 
-            # Run review loop
-            result = run_review_loop(
-                test_config_with_review,
-                sample_subtask,
-                git_repo,
-                baseline_commit,
-            )
+        # Second call: coder fix session (should contain feedback)
+        second_call_prompt = call_args_list[1][0][0]
+        assert "Fix review issues" in second_call_prompt, (
+            "Second call should be coder fix with feedback"
+        )
+        assert "Please fix formatting and add type hints" in second_call_prompt, (
+            "Feedback should be passed to coder fix session"
+        )
 
-            # Assertions
-            assert result is True, "Review loop should return True when eventually approved"
-            assert mock_session.call_count == 3, (
-                "Should have 3 calls: reviewer (changes requested), coder fix, reviewer (approved)"
-            )
-
-            # Verify the calls were made in correct order
-            call_args_list = mock_session.call_args_list
-
-            # First call: reviewer session (should contain diff, subtask info)
-            first_call_prompt = call_args_list[0][0][0]
-            assert "test-subtask-1" in first_call_prompt, (
-                "First call should be reviewer with subtask ID"
-            )
-            assert "Implement test feature" in first_call_prompt, (
-                "First call should include subtask description"
-            )
-
-            # Second call: coder fix session (should contain feedback)
-            second_call_prompt = call_args_list[1][0][0]
-            assert "Fix review issues" in second_call_prompt, (
-                "Second call should be coder fix with feedback"
-            )
-            assert "Please fix formatting and add type hints" in second_call_prompt, (
-                "Feedback should be passed to coder fix session"
-            )
-
-            # Third call: reviewer session again (re-review after fix)
-            third_call_prompt = call_args_list[2][0][0]
-            assert "test-subtask-1" in third_call_prompt, (
-                "Third call should be reviewer re-review with subtask ID"
-            )
+        # Third call: reviewer session again (re-review after fix)
+        third_call_prompt = call_args_list[2][0][0]
+        assert "test-subtask-1" in third_call_prompt, (
+            "Third call should be reviewer re-review with subtask ID"
+        )
 
 
-def test_reviewer_session_parses_events(
+def test_reviewer_session_reads_json_state(
     test_config_with_review: Config,
     sample_subtask: Subtask,
     git_repo: Path,
 ) -> None:
-    """Test _run_reviewer_session event parsing.
+    """Test _run_reviewer_session reads review state from JSON file.
 
-    This tests the event parsing logic in _run_reviewer_session (lines 161-175).
+    This tests the JSON-based review state reading in _run_reviewer_session.
     It verifies:
-    - review.approved event → ReviewResult(approved=True)
-    - review.changes_requested event → ReviewResult(approved=False, feedback=payload)
-    - No events or unrecognized events → default to approved (fail-open)
-
-    This specifically tests lines 161-175 in review.py:
-    - Line 164: Parse events from session output
-    - Line 167-171: Check for approval or changes requested
-    - Line 174-175: Default to approved if no clear signal
+    - status=approved in JSON → ReviewResult(approved=True)
+    - status=changes_requested in JSON → ReviewResult(approved=False, feedback=...)
+    - No JSON or pending status → default to approved (fail-open)
     """
     # Get baseline commit
     result = subprocess.run(
@@ -414,92 +418,74 @@ def test_reviewer_session_parses_events(
     )
     baseline_commit = result.stdout.strip()
 
-    # Test 1: review.approved event
+    rasen_dir = git_repo / ".rasen"
+
+    # Test 1: status=approved in JSON
     with patch("rasen.review.run_claude_session") as mock_session:
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_session.return_value = mock_result
+        mock_result = _create_mock_session_result(returncode=0)
 
-        with patch("rasen.review.parse_events") as mock_parse:
-            # Return approval event
-            mock_parse.return_value = [Event(topic="review.approved", payload="LGTM")]
+        def side_effect(*_args: object, **_kwargs: object) -> SessionRunResult:
+            _create_state_json(rasen_dir, sample_subtask.id, "approved")
+            return mock_result
 
-            result = _run_reviewer_session(
-                test_config_with_review,
-                sample_subtask,
-                git_repo,
-                baseline_commit,
-            )
+        mock_session.side_effect = side_effect
 
-            assert result.approved is True, "Should be approved for review.approved event"
-            assert result.feedback is None, "Feedback should be None for approval"
+        result = _run_reviewer_session(
+            test_config_with_review,
+            sample_subtask,
+            git_repo,
+            baseline_commit,
+        )
 
-    # Test 2: review.changes_requested event
+        assert result.approved is True, "Should be approved for status=approved in JSON"
+        assert result.feedback is None, "Feedback should be None for approval"
+
+    # Test 2: status=changes_requested in JSON
     with patch("rasen.review.run_claude_session") as mock_session:
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_session.return_value = mock_result
+        mock_result = _create_mock_session_result(returncode=0)
 
-        with patch("rasen.review.parse_events") as mock_parse:
-            # Return changes requested event with feedback
-            mock_parse.return_value = [
-                Event(
-                    topic="review.changes_requested",
-                    payload="Please add type hints and fix formatting",
-                )
-            ]
-
-            result = _run_reviewer_session(
-                test_config_with_review,
-                sample_subtask,
-                git_repo,
-                baseline_commit,
+        def side_effect2(*_args: object, **_kwargs: object) -> SessionRunResult:
+            _create_state_json(
+                rasen_dir,
+                sample_subtask.id,
+                "changes_requested",
+                ["Please add type hints", "Fix formatting"],
             )
+            return mock_result
 
-            assert result.approved is False, "Should not be approved for changes_requested"
-            assert result.feedback == "Please add type hints and fix formatting", (
-                "Feedback should match event payload"
-            )
+        mock_session.side_effect = side_effect2
 
-    # Test 3: No events (default to approved)
+        result = _run_reviewer_session(
+            test_config_with_review,
+            sample_subtask,
+            git_repo,
+            baseline_commit,
+        )
+
+        assert result.approved is False, "Should not be approved for changes_requested"
+        assert result.feedback == "Please add type hints\nFix formatting", (
+            "Feedback should be joined from JSON array"
+        )
+
+    # Test 3: status=pending (default to approved)
     with patch("rasen.review.run_claude_session") as mock_session:
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_session.return_value = mock_result
+        mock_result = _create_mock_session_result(returncode=0)
 
-        with patch("rasen.review.parse_events") as mock_parse:
-            # Return no events
-            mock_parse.return_value = []
+        def side_effect3(*_args: object, **_kwargs: object) -> SessionRunResult:
+            _create_state_json(rasen_dir, sample_subtask.id, "pending")
+            return mock_result
 
-            result = _run_reviewer_session(
-                test_config_with_review,
-                sample_subtask,
-                git_repo,
-                baseline_commit,
-            )
+        mock_session.side_effect = side_effect3
 
-            assert result.approved is True, "Should default to approved when no events"
-            assert result.feedback is None, "Feedback should be None for default approval"
+        result = _run_reviewer_session(
+            test_config_with_review,
+            sample_subtask,
+            git_repo,
+            baseline_commit,
+        )
 
-    # Test 4: Unrecognized event (default to approved)
-    with patch("rasen.review.run_claude_session") as mock_session:
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_session.return_value = mock_result
-
-        with patch("rasen.review.parse_events") as mock_parse:
-            # Return unrecognized event
-            mock_parse.return_value = [Event(topic="build.done", payload="tests: pass, lint: pass")]
-
-            result = _run_reviewer_session(
-                test_config_with_review,
-                sample_subtask,
-                git_repo,
-                baseline_commit,
-            )
-
-            assert result.approved is True, "Should default to approved for unrecognized events"
-            assert result.feedback is None, "Feedback should be None for default approval"
+        assert result.approved is True, "Should default to approved for pending status"
+        assert result.feedback is None, "Feedback should be None for default approval"
 
 
 def test_review_loop_exceeds_max_iterations(
@@ -515,11 +501,6 @@ def test_review_loop_exceeds_max_iterations(
     - Reviewer session is called max_loops times (3)
     - Coder fix session is called max_loops-1 times (2)
     - No fix is attempted on the last iteration
-
-    This specifically tests lines 92-97 in review.py:
-    - Line 92-93: Check if iteration >= max_loops
-    - Line 94-96: Log error about max iterations exceeded
-    - Line 97: Return False without attempting fix
     """
     # Get baseline commit
     result = subprocess.run(
@@ -531,69 +512,72 @@ def test_review_loop_exceeds_max_iterations(
     )
     baseline_commit = result.stdout.strip()
 
+    rasen_dir = git_repo / ".rasen"
+
     # Track call counts
     session_call_count = 0
 
     def mock_session_side_effect(*_args, **_kwargs):
-        """Mock Claude sessions."""
+        """Mock Claude sessions - always request changes from reviewer."""
         nonlocal session_call_count
         session_call_count += 1
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
+        mock_result = _create_mock_session_result(
+            returncode=0, session_id=f"session-{session_call_count}"
+        )
+
+        # Odd calls are reviewer sessions, even calls are coder fix sessions
+        # Reviewer sessions (1, 3, 5) should write changes_requested to JSON
+        if session_call_count % 2 == 1:
+            _create_state_json(
+                rasen_dir,
+                sample_subtask.id,
+                "changes_requested",
+                ["Please fix formatting"],
+            )
+
         return mock_result
 
     # Mock reviewer and coder sessions
     with patch("rasen.review.run_claude_session") as mock_session:
         mock_session.side_effect = mock_session_side_effect
 
-        # Mock parse_events to always request changes from reviewer
-        # parse_events is called once per reviewer session with hardcoded string
-        # We need to return changes_requested each time
-        with patch("rasen.review.parse_events") as mock_parse:
-            # Always return changes_requested (simulates reviewer never satisfied)
-            mock_parse.return_value = [
-                Event(
-                    topic="review.changes_requested",
-                    payload="Please fix formatting",
-                )
-            ]
+        # Run review loop
+        result = run_review_loop(
+            test_config_with_review,
+            sample_subtask,
+            git_repo,
+            baseline_commit,
+        )
 
-            # Run review loop
-            result = run_review_loop(
-                test_config_with_review,
-                sample_subtask,
-                git_repo,
-                baseline_commit,
-            )
+        # Assertions
+        assert result.passed is False, "Review loop should fail when max iterations exceeded"
+        assert result.feedback is not None, "Should have feedback when rejected"
 
-            # Assertions
-            assert result is False, "Review loop should return False when max iterations exceeded"
+        # With max_loops=3:
+        # Iteration 1: reviewer (changes) → coder fix
+        # Iteration 2: reviewer (changes) → coder fix
+        # Iteration 3: reviewer (changes) → NO FIX (max reached)
+        # Total: 3 reviewer calls + 2 coder fix calls = 5 calls
+        assert mock_session.call_count == 5, (
+            f"Expected 5 calls (3 reviewer + 2 coder fix), got {mock_session.call_count}"
+        )
 
-            # With max_loops=3:
-            # Iteration 1: reviewer (changes) → coder fix
-            # Iteration 2: reviewer (changes) → coder fix
-            # Iteration 3: reviewer (changes) → NO FIX (max reached)
-            # Total: 3 reviewer calls + 2 coder fix calls = 5 calls
-            assert mock_session.call_count == 5, (
-                f"Expected 5 calls (3 reviewer + 2 coder fix), got {mock_session.call_count}"
-            )
+        # Verify the sequence of calls
+        call_args_list = mock_session.call_args_list
 
-            # Verify the sequence of calls
-            call_args_list = mock_session.call_args_list
-
-            # First reviewer (iteration 1)
-            assert "test-subtask-1" in call_args_list[0][0][0], "First call should be reviewer"
-            # First coder fix
-            assert "Fix review issues" in call_args_list[1][0][0], "Second call should be coder fix"
-            # Second reviewer (iteration 2)
-            assert "test-subtask-1" in call_args_list[2][0][0], "Third call should be reviewer"
-            # Second coder fix
-            assert "Fix review issues" in call_args_list[3][0][0], "Fourth call should be coder fix"
-            # Third reviewer (iteration 3, final - no fix after this)
-            assert "test-subtask-1" in call_args_list[4][0][0], (
-                "Fifth call should be reviewer (final iteration)"
-            )
+        # First reviewer (iteration 1)
+        assert "test-subtask-1" in call_args_list[0][0][0], "First call should be reviewer"
+        # First coder fix
+        assert "Fix review issues" in call_args_list[1][0][0], "Second call should be coder fix"
+        # Second reviewer (iteration 2)
+        assert "test-subtask-1" in call_args_list[2][0][0], "Third call should be reviewer"
+        # Second coder fix
+        assert "Fix review issues" in call_args_list[3][0][0], "Fourth call should be coder fix"
+        # Third reviewer (iteration 3, final - no fix after this)
+        assert "test-subtask-1" in call_args_list[4][0][0], (
+            "Fifth call should be reviewer (final iteration)"
+        )
 
 
 def test_reviewer_session_handles_failure(

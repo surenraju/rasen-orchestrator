@@ -24,6 +24,19 @@ class StatusInfo(BaseModel):
     completed_subtasks: int = 0
     total_subtasks: int = 0
 
+    # Metrics
+    total_duration_seconds: float = 0.0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_tokens: int = 0
+
+    # Config info
+    model: str = ""
+    review_enabled: bool = True
+    qa_enabled: bool = True
+    max_iterations: int = 50
+    session_timeout: int = 1800
+
 
 class StatusStore:
     """Manages real-time status file for external monitoring."""
@@ -55,11 +68,18 @@ class StatusStore:
             return None
         return StatusInfo.model_validate_json(self.path.read_text())
 
-    def mark_completed(self) -> None:
-        """Mark orchestrator as completed."""
+    def mark_completed(self, completed_subtasks: int = 0, total_subtasks: int = 0) -> None:
+        """Mark orchestrator as completed.
+
+        Args:
+            completed_subtasks: Number of completed subtasks
+            total_subtasks: Total number of subtasks
+        """
         status = self.load()
         if status:
             status.status = "completed"
+            status.completed_subtasks = completed_subtasks
+            status.total_subtasks = total_subtasks
             status.last_activity = datetime.now(UTC)
             self.update(status)
 

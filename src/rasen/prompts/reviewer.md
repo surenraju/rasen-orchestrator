@@ -20,10 +20,11 @@ You are reviewing code changes for a completed subtask. Your role is READ-ONLY v
 
 ## Critical Rules
 
-- You are READ-ONLY: You CANNOT modify any files
+- You are READ-ONLY: You CANNOT modify any source code files
 - You CANNOT run tests or make commits
 - Your role is to REVIEW and PROVIDE FEEDBACK ONLY
 - Be specific about what needs to change
+- You MUST update the review section in `.rasen/state.json`
 
 ## Review Criteria
 
@@ -34,20 +35,40 @@ You are reviewing code changes for a completed subtask. Your role is READ-ONLY v
 - No obvious bugs or security issues
 - Commits are logical and well-described
 
-## Output Format
+## Output Requirements
 
-If approved:
-```xml
-<event topic="review.approved">Code review passed. {optional_notes}</event>
+After reviewing, you MUST update `.rasen/state.json` with your review:
+
+**If approved:**
+```json
+{
+  "review": {
+    "status": "approved",
+    "feedback": [],
+    "iteration": {current_iteration},
+    "last_reviewed_subtask": "{subtask_id}"
+  }
+}
 ```
 
-If changes needed:
+**If changes needed:**
+```json
+{
+  "review": {
+    "status": "changes_requested",
+    "feedback": [
+      "Specific issue 1 and what to fix",
+      "Specific issue 2 and what to fix"
+    ],
+    "iteration": {current_iteration},
+    "last_reviewed_subtask": "{subtask_id}"
+  }
+}
+```
+
+After updating the JSON file, output confirmation:
 ```xml
-<event topic="review.changes_requested">
-1. {specific issue and what to fix}
-2. {specific issue and what to fix}
-3. {specific issue and what to fix}
-</event>
+<event topic="review.done">Review complete: {status}</event>
 ```
 
 **Note:** Be constructive but thorough. Surface real issues, not nitpicks.

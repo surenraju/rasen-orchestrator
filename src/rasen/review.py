@@ -3,33 +3,38 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from rasen.claude_runner import run_claude_session
 from rasen.config import Config
-from rasen.events import parse_events
 from rasen.exceptions import SessionError
 from rasen.git import get_git_diff
 from rasen.logging import get_logger
-from rasen.models import Subtask
+from rasen.models import SessionMetrics, Subtask
 from rasen.prompts import create_agent_prompt
+from rasen.stores.metrics_store import MetricsStore
+from rasen.stores.plan_store import PlanStore
 from rasen.stores.status_store import StatusStore
 
 logger = get_logger(__name__)
 
 
+@dataclass
 class ReviewResult:
     """Result of a code review iteration."""
 
-    def __init__(self, approved: bool, feedback: str | None = None) -> None:
-        """Initialize review result.
+    approved: bool
+    feedback: str | None = None
 
-        Args:
-            approved: Whether review approved the changes
-            feedback: Specific feedback if changes requested
-        """
-        self.approved = approved
-        self.feedback = feedback
+
+@dataclass
+class ReviewLoopResult:
+    """Result of the entire review loop."""
+
+    passed: bool
+    feedback: str | None = None  # Last feedback if rejected
 
 
 def run_review_loop(
@@ -37,7 +42,7 @@ def run_review_loop(
     subtask: Subtask,
     project_dir: Path,
     baseline_commit: str,
-) -> bool:
+) -> ReviewLoopResult:
     """Run code review loop for a completed subtask.
 
     This implements the Coder ↔ Reviewer pattern:
@@ -52,14 +57,14 @@ def run_review_loop(
         baseline_commit: Commit hash before this subtask
 
     Returns:
-        True if review approved, False if max loops exceeded
+        ReviewLoopResult with passed status and feedback if rejected
 
     Raises:
         SessionError: If review or fix session fails critically
     """
     if not config.review.enabled:
         logger.info("Review loop disabled, skipping")
-        return True
+        return ReviewLoopResult(passed=True)
 
     max_loops = config.review.max_loops
 
@@ -82,7 +87,7 @@ def run_review_loop(
 
         if review_result.approved:
             logger.info(f"Review approved for subtask {subtask.id}")
-            return True
+            return ReviewLoopResult(passed=True)
 
         logger.warning(
             f"Review requested changes for subtask {subtask.id} (iteration {iteration}/{max_loops})"
@@ -94,7 +99,7 @@ def run_review_loop(
             logger.error(
                 f"Review loop exceeded max iterations ({max_loops}) for subtask {subtask.id}"
             )
-            return False
+            return ReviewLoopResult(passed=False, feedback=review_result.feedback)
 
         # Run coder fix session
         _run_coder_fix_session(config, subtask, review_result.feedback, project_dir)
@@ -102,7 +107,7 @@ def run_review_loop(
         # Delay between iterations
         time.sleep(config.orchestrator.session_delay_seconds)
 
-    return False  # Should not reach here, but safety
+    return ReviewLoopResult(passed=False)  # Should not reach here, but safety
 
 
 def _run_reviewer_session(
@@ -143,6 +148,9 @@ def _run_reviewer_session(
     # Run reviewer session (pass prompt directly, no file needed)
     # Enable debug logging to .rasen/debug_logs/
     debug_log_dir = project_dir / ".rasen" / "debug_logs"
+    metrics_store = MetricsStore(project_dir / ".rasen")
+    start_time = datetime.now(UTC)
+    start_ts = time.time()
     try:
         result = run_claude_session(
             prompt,
@@ -150,28 +158,65 @@ def _run_reviewer_session(
             config.orchestrator.session_timeout_seconds,
             debug_log_dir=debug_log_dir,
         )
+        duration = time.time() - start_ts
         # Extract session ID for logging
-        session_id = getattr(result, "session_id", "unknown")[:8]
+        session_id = result.session_id[:8]
         logger.info(f"Reviewer session ID: {session_id}")
+
+        # Record reviewer session metrics
+        session_metrics = SessionMetrics(
+            session_id=result.session_id,
+            agent_type="reviewer",
+            subtask_id=subtask.id,
+            duration_seconds=duration,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            started_at=start_time,
+            completed_at=datetime.now(UTC),
+            status="completed",
+        )
+        metrics_store.record_session(session_metrics)
     except SessionError as e:
         logger.error(f"Reviewer session failed: {e}")
         # On reviewer failure, assume approval to not block progress
         return ReviewResult(approved=True, feedback="Reviewer session failed, assuming approved")
 
-    # Parse events from session output
-    # NOTE: Current implementation doesn't capture stdout, so this is placeholder
-    # In real implementation, would parse actual session output
-    events = parse_events('<event topic="review.approved">LGTM</event>')
+    # Read review state from state.json
+    plan_store = PlanStore(project_dir / ".rasen")
+    plan = plan_store.load()
 
-    # Check for approval or changes requested
-    for event in events:
-        if event.topic == "review.approved":
-            return ReviewResult(approved=True)
-        elif event.topic == "review.changes_requested":
-            return ReviewResult(approved=False, feedback=event.payload)
+    if not plan:
+        logger.warning("No plan found, assuming approved")
+        return ReviewResult(approved=True)
+
+    # Determine review status and feedback
+    review_status: str | None = None
+    review_feedback: list[str] = []
+
+    # Check if per-subtask review (in subtask.review) or global review (in plan.review)
+    if subtask.id != "build-complete" and plan.subtasks:
+        # Per-subtask review - check the subtask's review field
+        for s in plan.subtasks:
+            if s.id == subtask.id and s.review:
+                review_status = s.review.status
+                review_feedback = s.review.feedback
+                break
+
+    # Fall back to global review if no per-subtask review found
+    if review_status is None:
+        review_status = plan.review.status
+        review_feedback = plan.review.feedback
+
+    # Return result based on status
+    if review_status == "approved":
+        return ReviewResult(approved=True)
+    elif review_status == "changes_requested":
+        feedback = "\n".join(review_feedback) if review_feedback else None
+        return ReviewResult(approved=False, feedback=feedback)
 
     # Default to approved if no clear signal (fail-open for progress)
-    logger.warning("No clear review signal, assuming approved")
+    logger.warning("No clear review signal in JSON, assuming approved")
     return ReviewResult(approved=True)
 
 
@@ -205,6 +250,9 @@ def _run_coder_fix_session(
     # Run coder session (pass prompt directly, no file needed)
     # Enable debug logging to .rasen/debug_logs/
     debug_log_dir = project_dir / ".rasen" / "debug_logs"
+    metrics_store = MetricsStore(project_dir / ".rasen")
+    start_time = datetime.now(UTC)
+    start_ts = time.time()
     try:
         result = run_claude_session(
             prompt,
@@ -212,9 +260,25 @@ def _run_coder_fix_session(
             config.orchestrator.session_timeout_seconds,
             debug_log_dir=debug_log_dir,
         )
+        duration = time.time() - start_ts
         # Extract session ID for logging
-        session_id = getattr(result, "session_id", "unknown")[:8]
+        session_id = result.session_id[:8]
         logger.info(f"Coder fix session ID: {session_id}")
+
+        # Record coder fix session metrics
+        session_metrics = SessionMetrics(
+            session_id=result.session_id,
+            agent_type="coder",
+            subtask_id=subtask.id,
+            duration_seconds=duration,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            started_at=start_time,
+            completed_at=datetime.now(UTC),
+            status="completed",
+        )
+        metrics_store.record_session(session_metrics)
     except SessionError as e:
         logger.error(f"Coder fix session failed: {e}")
         raise

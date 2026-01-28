@@ -38,9 +38,11 @@ def init(ctx: click.Context, task: str) -> None:
     rasen_dir = Path(config.project.root) / ".rasen"
     rasen_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save task description
+    # Save task description (support file reference)
     task_file = rasen_dir / "task.txt"
-    task_file.write_text(task.strip())
+    task_path = Path(task)
+    task_content = task_path.read_text() if task_path.exists() and task_path.is_file() else task
+    task_file.write_text(task_content.strip())
 
     # Copy agent prompts to .rasen/prompts/ for customization
     prompts_dir = rasen_dir / "prompts"
@@ -268,6 +270,26 @@ def run(ctx: click.Context, background: bool, skip_review: bool, skip_qa: bool) 
             raise
 
 
+def _format_duration(seconds: float) -> str:
+    """Format duration in human-readable form."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    elif seconds < 3600:
+        mins = int(seconds / 60)
+        secs = int(seconds % 60)
+        return f"{mins}m {secs}s"
+    else:
+        hours = int(seconds / 3600)
+        mins = int((seconds % 3600) / 60)
+        secs = int(seconds % 60)
+        return f"{hours}h {mins}m {secs}s"
+
+
+def _format_tokens(count: int) -> str:
+    """Format token count with commas."""
+    return f"{count:,}"
+
+
 @main.command()
 @click.pass_context
 def status(ctx: click.Context) -> None:
@@ -275,6 +297,7 @@ def status(ctx: click.Context) -> None:
     import subprocess  # noqa: PLC0415
     from datetime import UTC, datetime  # noqa: PLC0415
 
+    from rasen.stores.metrics_store import MetricsStore  # noqa: PLC0415
     from rasen.stores.plan_store import PlanStore  # noqa: PLC0415
     from rasen.stores.status_store import StatusStore  # noqa: PLC0415
 
@@ -286,13 +309,20 @@ def status(ctx: click.Context) -> None:
     store = StatusStore(status_file)
     status_info = store.load()
 
+    # Box width for consistent formatting
+    box_width = 74
+
     if not status_info:
-        click.echo("╔════════════════════════════════════════════════════════╗")
-        click.echo("║  RASEN Status                                          ║")
-        click.echo("╠════════════════════════════════════════════════════════╣")
-        click.echo("║  Status: Not running                                   ║")
-        click.echo("╚════════════════════════════════════════════════════════╝")
+        click.echo("╔" + "═" * box_width + "╗")
+        click.echo("║  RASEN Status" + " " * (box_width - 14) + "║")
+        click.echo("╠" + "═" * box_width + "╣")
+        click.echo("║  Status: Not running" + " " * (box_width - 21) + "║")
+        click.echo("╚" + "═" * box_width + "╝")
         return
+
+    # Load metrics
+    metrics_store = MetricsStore(rasen_dir)
+    aggregate = metrics_store.get_aggregate()
 
     # Calculate progress percentage
     if status_info.total_subtasks > 0:
@@ -301,19 +331,19 @@ def status(ctx: click.Context) -> None:
         progress_pct = 0
 
     # Progress bar
-    bar_width = 40
-    filled = int((progress_pct / 100) * bar_width)
-    bar = "█" * filled + "░" * (bar_width - filled)
+    bar_width_inner = 40
+    filled = int((progress_pct / 100) * bar_width_inner)
+    bar = "█" * filled + "░" * (bar_width_inner - filled)
 
     # Status emoji
     status_emoji = {
         "running": "🔄",
         "initialized": "⏳",
-        "complete": "✅",
+        "completed": "✅",
         "failed": "❌",
-    }.get(status_info.status, "❓")
+    }.get(status_info.status.split(":")[0], "❓")
 
-    # Calculate time elapsed
+    # Calculate time elapsed since last activity
     now = datetime.now(UTC)
     elapsed = now - status_info.last_activity
     if elapsed.total_seconds() < 60:
@@ -321,65 +351,146 @@ def status(ctx: click.Context) -> None:
     elif elapsed.total_seconds() < 3600:
         time_ago = f"{int(elapsed.total_seconds() / 60)}m ago"
     else:
-        time_ago = f"{int(elapsed.total_seconds() / 3600)}h ago"
+        hrs = int(elapsed.total_seconds() / 3600)
+        mins = int((elapsed.total_seconds() % 3600) / 60)
+        time_ago = f"{hrs}h {mins}m ago"
+
+    # Calculate total elapsed time
+    total_duration = aggregate.total_duration_seconds if aggregate.total_duration_seconds > 0 else 0
+    duration_str = _format_duration(total_duration) if total_duration > 0 else "N/A"
+
+    # Load plan for task name
+    plan_store = PlanStore(rasen_dir)
+    plan = plan_store.load()
+    task_name = plan.task_name if plan else "Unknown task"
+    if len(task_name) > 60:
+        task_name = task_name[:57] + "..."
 
     # Print header
-    click.echo("\n╔════════════════════════════════════════════════════════════════════╗")
-    click.echo(f"║  {status_emoji}  RASEN Orchestrator Status" + " " * 36 + "║")
-    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+    click.echo("")
+    click.echo("╔" + "═" * box_width + "╗")
+    click.echo(f"║  {status_emoji}  RASEN Orchestrator" + " " * (box_width - 23) + "║")
+    click.echo("╠" + "═" * box_width + "╣")
 
-    # Status and PID
-    click.echo(f"║  Status: {status_info.status.upper():<20} PID: {status_info.pid:<15}║")
-    click.echo(f"║  Phase:  {status_info.current_phase:<20} Session: {status_info.iteration:<12}║")
-    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+    # Status and started info
+    status_text = status_info.status.upper()[:20]
+    started_text = f"Started: {time_ago}"
+    line = f"║  Status: {status_text:<20} {started_text:<30}"
+    click.echo(line + " " * (box_width - len(line) + 1) + "║")
 
-    # Progress
+    # Task name
+    task_line = f"║  Task: {task_name}"
+    click.echo(task_line + " " * (box_width - len(task_line) + 1) + "║")
+
+    # Progress section
+    click.echo("╠" + "═" * box_width + "╣")
+    click.echo("║  PROGRESS" + " " * (box_width - 10) + "║")
+
     completed = status_info.completed_subtasks
     total = status_info.total_subtasks
-    progress_text = f"{completed}/{total} subtasks ({progress_pct}%)"
-    padding = " " * (47 - len(progress_text))
-    click.echo(f"║  Progress: {progress_text}{padding}║")
-    click.echo(f"║  [{bar}]" + " " * (64 - len(bar) - 4) + "║")
-    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+    progress_text = f"{completed}/{total} ({progress_pct}%)"
+    bar_line = f"║  {bar}  {progress_text}"
+    click.echo(bar_line + " " * (box_width - len(bar_line) + 1) + "║")
 
-    # Current task
-    if status_info.subtask_id:
-        click.echo(f"║  Current: {status_info.subtask_id:<54}║")
-        desc = status_info.subtask_description or ""
-        if len(desc) > 60:
-            desc = desc[:57] + "..."
-        click.echo(f"║  {desc:<64}║")
+    phase_text = f"Phase: {status_info.current_phase}"
+    session_text = f"Session: {status_info.iteration}"
+    phase_line = f"║  {phase_text:<35} {session_text:<25}"
+    click.echo(phase_line + " " * (box_width - len(phase_line) + 1) + "║")
+
+    # Agents section
+    click.echo("╠" + "═" * box_width + "╣")
+    click.echo("║  AGENTS" + " " * (box_width - 8) + "║")
+
+    # Agent table header
+    click.echo("║  ┌─────────────┬──────────────────────┬──────────┬───────────┐" + " " * 8 + "║")
+    click.echo("║  │ Agent       │ Model                │ Sessions │ Tokens    │" + " " * 8 + "║")
+    click.echo("║  ├─────────────┼──────────────────────┼──────────┼───────────┤" + " " * 8 + "║")
+
+    # Agent rows
+    model_name = config.agent.model[:20] if hasattr(config, "agent") else "claude-sonnet-4"[:20]
+    for agent_type in ["Initializer", "Coder", "Reviewer", "QA"]:
+        agent_key = agent_type.lower()
+        sessions = aggregate.sessions_by_agent.get(agent_key, 0)
+        tokens = aggregate.tokens_by_agent.get(agent_key, 0)
+        tokens_str = _format_tokens(tokens)
+        row = f"║  │ {agent_type:<11} │ {model_name:<20} │ {sessions:<8} │ {tokens_str:<9} │"
+        click.echo(row + " " * 8 + "║")
+
+    click.echo("║  └─────────────┴──────────────────────┴──────────┴───────────┘" + " " * 8 + "║")
+
+    # Metrics section
+    click.echo("╠" + "═" * box_width + "╣")
+    click.echo("║  METRICS" + " " * (box_width - 9) + "║")
+
+    duration_text = f"Duration: {duration_str}"
+    sessions_text = f"Total Sessions: {aggregate.total_sessions}"
+    metrics_line1 = f"║  {duration_text:<35} {sessions_text:<25}"
+    click.echo(metrics_line1 + " " * (box_width - len(metrics_line1) + 1) + "║")
+
+    total_tokens_str = _format_tokens(aggregate.total_tokens)
+    input_tokens_str = _format_tokens(aggregate.total_input_tokens)
+    output_tokens_str = _format_tokens(aggregate.total_output_tokens)
+    tokens_text = f"Tokens: {total_tokens_str} (In: {input_tokens_str} / Out: {output_tokens_str})"
+    tokens_line = f"║  {tokens_text}"
+    click.echo(tokens_line + " " * (box_width - len(tokens_line) + 1) + "║")
+
+    commits_text = f"Commits: {status_info.total_commits}"
+    if aggregate.total_sessions > 0:
+        avg_session = _format_duration(aggregate.total_duration_seconds / aggregate.total_sessions)
     else:
-        click.echo("║  Current: Initializing..." + " " * 41 + "║")
+        avg_session = "N/A"
+    avg_text = f"Avg Session: {avg_session}"
+    metrics_line2 = f"║  {commits_text:<35} {avg_text:<25}"
+    click.echo(metrics_line2 + " " * (box_width - len(metrics_line2) + 1) + "║")
 
-    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+    # Configuration section
+    click.echo("╠" + "═" * box_width + "╣")
+    click.echo("║  CONFIGURATION" + " " * (box_width - 15) + "║")
 
-    # Git info
-    click.echo(f"║  Commits: {status_info.total_commits:<54}║")
+    review_status = "enabled" if config.review.enabled else "disabled"
+    review_mode = "(after all)" if not config.review.per_subtask else "(per subtask)"
+    review_mark = "✓" if config.review.enabled else "✗"
+    qa_status = "enabled" if config.qa.enabled else "disabled"
+    qa_mode = "(after all)" if not config.qa.per_subtask else "(per subtask)"
+    qa_mark = "✓" if config.qa.enabled else "✗"
 
-    # Last activity
-    click.echo(f"║  Last activity: {time_ago:<48}║")
-    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+    review_text = f"Review: {review_mark} {review_status} {review_mode}"
+    qa_text = f"QA: {qa_mark} {qa_status} {qa_mode}"
+    config_line1 = f"║  {review_text:<35} {qa_text:<25}"
+    click.echo(config_line1 + " " * (box_width - len(config_line1) + 1) + "║")
 
-    # Load plan to show remaining tasks
-    plan_store = PlanStore(rasen_dir / "implementation_plan.json")
-    if plan := plan_store.load():
-        pending_tasks = [s for s in plan.subtasks if s.status.value == "pending"]
-        if pending_tasks:
-            remaining_text = f"{len(pending_tasks)} tasks"
-            padding = " " * (54 - len(remaining_text))
-            click.echo(f"║  Remaining: {remaining_text}{padding}║")
-            # Show next 3 tasks
-            for i, task in enumerate(pending_tasks[:3], 1):
-                desc = task.description
-                task_desc = desc[:55] if len(desc) > 55 else desc
-                click.echo(f"║    {i}. {task_desc:<59}║")
-        else:
-            click.echo("║  Remaining: No pending tasks" + " " * 36 + "║")
+    max_iter_text = f"Max Iterations: {config.orchestrator.max_iterations}"
+    timeout_mins = config.orchestrator.session_timeout_seconds // 60
+    timeout_text = f"Session Timeout: {timeout_mins}m"
+    config_line2 = f"║  {max_iter_text:<35} {timeout_text:<25}"
+    click.echo(config_line2 + " " * (box_width - len(config_line2) + 1) + "║")
 
-    click.echo("╠════════════════════════════════════════════════════════════════════╣")
+    stall_text = f"Stall Detection: {config.stall_detection.max_no_commit_sessions} no-commit"
+    fail_text = f"Consecutive Failures: {config.stall_detection.max_consecutive_failures}"
+    config_line3 = f"║  {stall_text:<35} {fail_text:<25}"
+    click.echo(config_line3 + " " * (box_width - len(config_line3) + 1) + "║")
 
-    # Recent log entries (last 5 lines)
+    # Current section
+    click.echo("╠" + "═" * box_width + "╣")
+    click.echo("║  CURRENT" + " " * (box_width - 9) + "║")
+
+    if status_info.subtask_id:
+        subtask_text = f"Subtask {status_info.subtask_id}: {status_info.subtask_description or ''}"
+        if len(subtask_text) > 68:
+            subtask_text = subtask_text[:65] + "..."
+        current_line = f"║  {subtask_text}"
+        click.echo(current_line + " " * (box_width - len(current_line) + 1) + "║")
+
+        phase_status = f"Status: {status_info.current_phase} in progress..."
+        status_line = f"║  {phase_status}"
+        click.echo(status_line + " " * (box_width - len(status_line) + 1) + "║")
+    else:
+        click.echo("║  Initializing..." + " " * (box_width - 17) + "║")
+
+    # Recent activity section
+    click.echo("╠" + "═" * box_width + "╣")
+    click.echo("║  RECENT ACTIVITY" + " " * (box_width - 17) + "║")
+
     log_file = rasen_dir / "orchestration.log"
     if log_file.exists():
         try:
@@ -389,20 +500,26 @@ def status(ctx: click.Context) -> None:
                 text=True,
                 check=True,
             )
-            click.echo("║  Recent Activity:" + " " * 47 + "║")
             for line in result.stdout.strip().split("\n"):
                 # Extract timestamp and message
                 if " - " in line:
                     parts = line.split(" - ", 3)
                     if len(parts) >= 4:
-                        time_part = parts[0].split()[1]  # Get time only
+                        time_part = (
+                            parts[0].split()[1] if len(parts[0].split()) > 1 else parts[0][:8]
+                        )
                         msg = parts[-1][:55]
-                        click.echo(f"║  {time_part} │ {msg:<48}║")
+                        activity_line = f"║  {time_part} │ {msg}"
+                        click.echo(activity_line + " " * (box_width - len(activity_line) + 1) + "║")
         except Exception:
-            pass
+            click.echo("║  No recent activity" + " " * (box_width - 20) + "║")
+    else:
+        click.echo("║  No log file found" + " " * (box_width - 19) + "║")
 
-    click.echo("╚════════════════════════════════════════════════════════════════════╝")
-    click.echo("\n💡 Tip: Use 'rasen logs --follow' to watch live updates\n")
+    click.echo("╚" + "═" * box_width + "╝")
+    click.echo("")
+    click.echo("💡 Use 'rasen logs -f' to watch live | 'rasen stop' to halt")
+    click.echo("")
 
 
 @main.command()

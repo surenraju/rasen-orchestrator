@@ -19,7 +19,7 @@ class PlanStore:
         Args:
             rasen_dir: Path to .rasen directory.
         """
-        self.path = rasen_dir / "implementation_plan.json"
+        self.path = rasen_dir / "state.json"
         self.rasen_dir = rasen_dir
 
     def load(self) -> ImplementationPlan | None:

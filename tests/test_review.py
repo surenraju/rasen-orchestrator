@@ -119,8 +119,8 @@ def test_review_loop_disabled(
             baseline_commit="abc123",
         )
 
-        # Verify return value is True (approved by default when disabled)
-        assert result is True
+        # Verify return value is passed (approved by default when disabled)
+        assert result.passed is True
 
         # Verify no sessions were called
         mock_reviewer.assert_not_called()
@@ -233,7 +233,7 @@ def test_review_loop_updates_status(
         )
 
         # Verify review loop succeeded (approved on second try)
-        assert result is True
+        assert result.passed is True
 
         # Verify reviewer was called twice
         assert call_count == 2

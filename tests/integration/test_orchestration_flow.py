@@ -62,7 +62,7 @@ def test_project_with_prompts(tmp_path: Path) -> Path:
 
 Task: {task_description}
 
-Create implementation plan and save to `.rasen/implementation_plan.json`.
+Create implementation plan and save to `.rasen/state.json`.
     """)
 
     (prompts_dir / "coder.md").write_text("""
@@ -172,7 +172,7 @@ def test_initializer_is_called_when_no_plan(
     1. Loop starts with no plan
     2. Detects no plan exists
     3. Calls _run_initializer_session()
-    4. Creates implementation_plan.json
+    4. Creates state.json
 
     Bug that was missed:
     - Loop assumed plan existed
@@ -199,7 +199,7 @@ def test_initializer_is_called_when_no_plan(
                 }
             ],
         }
-        plan_file = rasen_dir / "implementation_plan.json"
+        plan_file = rasen_dir / "state.json"
         plan_file.write_text(json.dumps(plan, indent=2))
 
         result = MagicMock()
@@ -219,8 +219,8 @@ def test_initializer_is_called_when_no_plan(
     assert mock_claude_session.called, "Initializer session was never called!"
 
     # ASSERTION: Plan was created
-    plan_file = rasen_dir / "implementation_plan.json"
-    assert plan_file.exists(), "implementation_plan.json was not created!"
+    plan_file = rasen_dir / "state.json"
+    assert plan_file.exists(), "state.json was not created!"
 
     # NOTE: Prompts are passed directly to Claude, not written to disk
 
@@ -259,7 +259,7 @@ def test_prompt_paths_are_correct(
             "task_name": "Test",
             "subtasks": [{"id": "t1", "description": "Task", "status": "pending", "attempts": 0}],
         }
-        (rasen_dir / "implementation_plan.json").write_text(json.dumps(plan))
+        (rasen_dir / "state.json").write_text(json.dumps(plan))
 
         result = MagicMock()
         result.returncode = 0
@@ -324,7 +324,7 @@ def test_full_orchestration_flow_with_api(
     result = loop.run()
 
     # Verify plan was created
-    plan_file = test_project_with_prompts / ".rasen" / "implementation_plan.json"
+    plan_file = test_project_with_prompts / ".rasen" / "state.json"
     assert plan_file.exists()
 
     # Verify file was created

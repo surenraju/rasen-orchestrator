@@ -16,10 +16,13 @@ This session creates everything future sessions need to work effectively.
    - Set up environment variables
    - Any project-specific setup
 
-2. **Create `.rasen/implementation_plan.json`** with ALL subtasks marked "pending"
+2. **Create `.rasen/state.json`** with ALL subtasks marked "pending"
    - Break task into 5-15 discrete subtasks
    - Each subtask completable in one session (< 30 minutes)
    - Order by dependency (foundations first)
+   - **MUST follow this exact JSON schema:**
+
+{task_plan_schema}
 
 3. **Create `.rasen/progress.txt`** - Initialize with session 1 notes
    - Document key decisions
@@ -33,7 +36,7 @@ This session creates everything future sessions need to work effectively.
 - It is UNACCEPTABLE to create subtasks without clear descriptions
 - It is UNACCEPTABLE to skip the init.sh script
 - Each subtask MUST be independently verifiable
-- Use the provided JSON schema for implementation_plan.json
+- Use the provided JSON schema for state.json
 
 ## Output Format
 

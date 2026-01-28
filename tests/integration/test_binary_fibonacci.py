@@ -296,8 +296,8 @@ def test_run_fibonacci_full(test_project: Path) -> None:
     assert result.returncode == 0, f"Orchestrator run failed with code {result.returncode}"
 
     # Verify plan was created
-    plan_file = test_project / ".rasen" / "implementation_plan.json"
-    assert plan_file.exists(), "Implementation plan not created"
+    plan_file = test_project / ".rasen" / "state.json"
+    assert plan_file.exists(), "State file not created"
 
     plan = json.loads(plan_file.read_text())
     assert "task_name" in plan

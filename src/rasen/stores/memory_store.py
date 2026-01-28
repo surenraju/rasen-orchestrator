@@ -130,6 +130,10 @@ class MemoryStore:
     def _parse_memories(self, content: str) -> list[Memory]:
         """Parse markdown content into Memory objects.
 
+        Supports two formats:
+        1. Simple: `- [subtask-id] content` under section headers
+        2. Complex: `### mem-id` with metadata (legacy)
+
         Args:
             content: Markdown content
 
@@ -137,36 +141,69 @@ class MemoryStore:
             List of Memory objects
         """
         memories = []
-        pattern = r"### (mem-\d{8}-\d+)\n> (.*?)\n<!-- tags: (.*?) \| created: (.*?) -->"
 
-        for match in re.finditer(pattern, content, re.DOTALL):
-            mem_id = match.group(1)
-            mem_content = match.group(2).strip()
-            tags = [t.strip() for t in match.group(3).split(",")]
-            created = datetime.fromisoformat(match.group(4))
+        # Try simple format first (bullet points under sections)
+        current_section: Literal["pattern", "decision", "fix"] | None = None
+        mem_counter = 0
 
-            # Determine type from section
-            start = match.start()
-            before = content[:start]
-            if (
-                "## Decisions" in before
-                and "## Fixes" not in before[before.rfind("## Decisions") :]
-            ):
-                mem_type: Literal["pattern", "decision", "fix"] = "decision"
-            elif "## Fixes" in before:
-                mem_type = "fix"
-            else:
-                mem_type = "pattern"
+        for raw_line in content.split("\n"):
+            line = raw_line.strip()
 
-            memories.append(
-                Memory(
-                    id=mem_id,
-                    type=mem_type,
-                    content=mem_content,
-                    tags=tags,
-                    created_at=created,
+            # Track current section
+            if line.startswith("## Decisions") or line.startswith("## Decision"):
+                current_section = "decision"
+            elif line.startswith("## Learnings") or line.startswith("## Learning"):
+                current_section = "pattern"  # Map learnings to patterns
+            elif line.startswith("## Fixes") or line.startswith("## Fix"):
+                current_section = "fix"
+            elif line.startswith("## Patterns") or line.startswith("## Pattern"):
+                current_section = "pattern"
+            elif line.startswith("## "):
+                current_section = None  # Unknown section
+
+            # Parse bullet points
+            if current_section and line.startswith("- "):
+                mem_counter += 1
+                mem_content = line[2:].strip()  # Remove "- " prefix
+                if mem_content and not mem_content.startswith("<!--"):
+                    memories.append(
+                        Memory(
+                            id=f"mem-simple-{mem_counter:03d}",
+                            type=current_section,
+                            content=mem_content,
+                            tags=[],
+                            created_at=datetime.now(UTC),
+                        )
+                    )
+
+        # Fallback: try legacy complex format if no simple memories found
+        if not memories:
+            pattern = r"### (mem-\d{8}-\d+)\n> (.*?)\n<!-- tags: (.*?) \| created: (.*?) -->"
+            for match in re.finditer(pattern, content, re.DOTALL):
+                mem_id = match.group(1)
+                mem_content = match.group(2).strip()
+                tags = [t.strip() for t in match.group(3).split(",")]
+                created = datetime.fromisoformat(match.group(4))
+
+                start = match.start()
+                before = content[:start]
+                decisions_idx = before.rfind("## Decisions")
+                if "## Decisions" in before and "## Fixes" not in before[decisions_idx:]:
+                    mem_type: Literal["pattern", "decision", "fix"] = "decision"
+                elif "## Fixes" in before:
+                    mem_type = "fix"
+                else:
+                    mem_type = "pattern"
+
+                memories.append(
+                    Memory(
+                        id=mem_id,
+                        type=mem_type,
+                        content=mem_content,
+                        tags=tags,
+                        created_at=created,
+                    )
                 )
-            )
 
         return memories
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from rasen.claude_runner import run_claude_session
@@ -15,6 +16,7 @@ from rasen.git import count_new_commits, get_current_commit, is_git_repo
 from rasen.logging import get_logger
 from rasen.models import (
     LoopState,
+    SessionMetrics,
     SessionResult,
     SessionStatus,
     Subtask,
@@ -23,8 +25,8 @@ from rasen.models import (
 )
 from rasen.prompts import create_agent_prompt
 from rasen.qa import run_qa_loop
-from rasen.review import run_review_loop
-from rasen.stores.memory_store import MemoryStore
+from rasen.review import ReviewLoopResult, run_review_loop
+from rasen.stores.metrics_store import MetricsStore
 from rasen.stores.plan_store import PlanStore
 from rasen.stores.recovery_store import RecoveryStore
 from rasen.stores.status_store import StatusInfo, StatusStore
@@ -52,8 +54,8 @@ class OrchestrationLoop:
         # Initialize stores
         self.plan_store = PlanStore(self.rasen_dir)
         self.recovery_store = RecoveryStore(self.rasen_dir)
-        self.memory_store = MemoryStore(Path(config.memory.path))
         self.status_store = StatusStore(Path(config.background.status_file))
+        self.metrics_store = MetricsStore(self.rasen_dir)
 
         # State
         self.state = LoopState()
@@ -104,6 +106,8 @@ class OrchestrationLoop:
 
                     # Run Initializer agent to create plan
                     try:
+                        # Update status to show Initializer is running
+                        self._update_status_initializer("Creating implementation plan...")
                         session_result = self._run_initializer_session(self.task_description)
 
                         # Reload plan after Initializer runs
@@ -118,8 +122,15 @@ class OrchestrationLoop:
                             f"Plan created with {len(plan.subtasks)} subtasks"
                         )
 
+                        # Update status to show plan was created
+                        self._update_status_initializer(
+                            f"Plan created with {len(plan.subtasks)} subtasks"
+                        )
+
                         # Delay before starting subtasks
-                        time.sleep(self.config.orchestrator.session_delay_seconds)
+                        delay = self.config.orchestrator.session_delay_seconds
+                        logger.info(f"Waiting {delay}s before starting subtasks...")
+                        time.sleep(delay)
 
                     except SessionError as e:
                         logger.error(f"Initializer session failed: {e}")
@@ -142,18 +153,27 @@ class OrchestrationLoop:
                             description="Complete build review",
                             status=SubtaskStatus.COMPLETED,
                         )
-                        review_passed = run_review_loop(
+                        build_review_result = run_review_loop(
                             self.config, build_subtask, self.project_dir, baseline_commit
                         )
-                        if not review_passed:
+                        if not build_review_result.passed:
                             logger.error("Build-wide review failed")
+                            # Record review rejection for recovery context
+                            feedback = build_review_result.feedback or "No feedback"
+                            self.recovery_store.record_attempt(
+                                subtask_id="build-complete",
+                                session=self.state.iteration,
+                                success=False,
+                                approach="Build-wide review",
+                                error_message=f"Review rejected: {feedback}",
+                            )
                             self.status_store.mark_failed("Review validation failed")
                             return TerminationReason.ERROR
 
                     # Run QA loop if enabled
                     if plan and self.config.qa.enabled:
                         logger.info("Running QA validation for entire build")
-                        qa_passed = run_qa_loop(
+                        qa_result = run_qa_loop(
                             self.config,
                             plan,
                             self.project_dir,
@@ -161,14 +181,25 @@ class OrchestrationLoop:
                             self.task_description,
                         )
 
-                        if not qa_passed:
+                        if not qa_result.passed:
                             logger.error("QA validation failed or escalated")
+                            # Record QA rejection for recovery context
+                            issues = qa_result.issues[:3] if qa_result.issues else []
+                            issues_summary = "; ".join(issues) if issues else "No details"
+                            self.recovery_store.record_attempt(
+                                subtask_id="qa-validation",
+                                session=self.state.iteration,
+                                success=False,
+                                approach="Build-wide QA validation",
+                                error_message=f"QA rejected: {issues_summary}",
+                            )
                             self.status_store.mark_failed("QA validation failed")
                             return TerminationReason.ERROR
 
                     # All done!
                     logger.info("All validation complete - task finished!")
-                    self.status_store.mark_completed()
+                    completed, total = self.plan_store.get_completion_stats()
+                    self.status_store.mark_completed(completed, total)
                     return TerminationReason.COMPLETE
 
                 # Update status
@@ -212,15 +243,15 @@ class OrchestrationLoop:
                         # Validate completion
                         if validate_completion(session_result.events, self.config.backpressure):
                             # Run per-subtask review if enabled
-                            review_passed = True
+                            review_result: ReviewLoopResult | None = None
                             if self.config.review.enabled and self.config.review.per_subtask:
                                 logger.info(f"Running per-subtask review for {subtask.id}")
                                 subtask_baseline = commit_before
-                                review_passed = run_review_loop(
+                                review_result = run_review_loop(
                                     self.config, subtask, self.project_dir, subtask_baseline
                                 )
 
-                            if review_passed:
+                            if review_result is None or review_result.passed:
                                 self.plan_store.mark_complete(subtask.id)
                                 self.recovery_store.record_good_commit(
                                     self._get_commit_hash(), subtask.id
@@ -234,6 +265,15 @@ class OrchestrationLoop:
                                 )
                             else:
                                 logger.warning(f"Subtask {subtask.id} completed but failed review")
+                                # Record review rejection for recovery context
+                                feedback = review_result.feedback or "No feedback"
+                                self.recovery_store.record_attempt(
+                                    subtask_id=subtask.id,
+                                    session=self.state.iteration,
+                                    success=False,
+                                    approach="Subtask completed but review rejected",
+                                    error_message=f"Review rejected: {feedback}",
+                                )
                                 self.state.consecutive_failures += 1
                         else:
                             logger.warning(
@@ -262,7 +302,9 @@ class OrchestrationLoop:
                     self.state.consecutive_failures += 1
 
                 # Delay between sessions
-                time.sleep(self.config.orchestrator.session_delay_seconds)
+                delay = self.config.orchestrator.session_delay_seconds
+                logger.info(f"Waiting {delay}s before next session...")
+                time.sleep(delay)
 
             # Max iterations reached
             return TerminationReason.MAX_ITERATIONS
@@ -276,6 +318,31 @@ class OrchestrationLoop:
             self.status_store.mark_failed(str(e))
             return TerminationReason.ERROR
 
+    def _format_memory_context(self) -> str:
+        """Format memory from state.json for prompt injection.
+
+        Returns:
+            Formatted memory string or empty string if no memories.
+        """
+        plan = self.plan_store.load()
+        if not plan or not plan.memory:
+            return ""
+
+        lines = []
+        if plan.memory.decisions:
+            lines.append("## Key Decisions from Previous Sessions")
+            for entry in plan.memory.decisions:
+                lines.append(f"- [{entry.subtask_id}] {entry.content}")
+            lines.append("")
+
+        if plan.memory.learnings:
+            lines.append("## Key Learnings from Previous Sessions")
+            for entry in plan.memory.learnings:
+                lines.append(f"- [{entry.subtask_id}] {entry.content}")
+            lines.append("")
+
+        return "\n".join(lines) if lines else ""
+
     def _run_session(self, subtask_id: str, description: str) -> SessionResult:
         """Run a single coding session.
 
@@ -287,7 +354,7 @@ class OrchestrationLoop:
             SessionResult with status and events
         """
         # Prepare prompt
-        memory_context = self.memory_store.format_for_injection(self.config.memory.max_tokens)
+        memory_context = self._format_memory_context()
         recovery_hints = self.recovery_store.get_recovery_hints(subtask_id)
         attempt_number = self.recovery_store.get_attempt_count(subtask_id) + 1
 
@@ -310,7 +377,8 @@ class OrchestrationLoop:
         # Run session (pass prompt directly, no file needed)
         # Enable debug logging to .rasen/debug_logs/
         debug_log_dir = self.project_dir / ".rasen" / "debug_logs"
-        start_time = time.time()
+        start_time = datetime.now(UTC)
+        start_ts = time.time()
         try:
             result = run_claude_session(
                 prompt,
@@ -319,10 +387,10 @@ class OrchestrationLoop:
                 debug_log_dir=debug_log_dir,
             )
         finally:
-            duration = time.time() - start_time
+            duration = time.time() - start_ts
 
         # Extract session ID for logging
-        session_id = getattr(result, "session_id", "unknown")[:8]
+        session_id = result.session_id[:8]
         logger.info(f"Session {self.state.iteration}: Claude session ID: {session_id}")
 
         # Parse actual output from Claude session
@@ -356,6 +424,21 @@ class OrchestrationLoop:
             error_message=error_msg,
         )
 
+        # Record session metrics
+        session_metrics = SessionMetrics(
+            session_id=result.session_id,
+            agent_type="coder",
+            subtask_id=subtask_id,
+            duration_seconds=duration,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            started_at=start_time,
+            completed_at=datetime.now(UTC),
+            status="completed" if success else "failed",
+        )
+        self.metrics_store.record_session(session_metrics)
+
         return SessionResult(
             status=status,
             output=output,
@@ -377,17 +460,42 @@ class OrchestrationLoop:
             f"Session {self.state.iteration}: Running Initializer for task: {task_description}"
         )
 
-        # Create initializer prompt
+        # Create initializer prompt with schema
+        task_plan_schema = """```json
+{
+  "task_name": "Name of the task (REQUIRED)",
+  "subtasks": [
+    {
+      "id": "1",  // MUST be string, not integer
+      "title": "Short title for the subtask",
+      "description": "Detailed description of what needs to be done",
+      "status": "pending",  // Always "pending" for new tasks
+      "files": ["src/path/to/file.py"],  // Files to create/modify
+      "tests": ["tests/unit/test_file.py"],  // Test files
+      "dependencies": ["1", "2"],  // IDs of subtasks this depends on (as strings)
+      "acceptance_criteria": [
+        "Criterion 1 that must be met",
+        "Criterion 2 that must be met"
+      ]
+    }
+  ]
+}
+```
+
+**CRITICAL**: The `id` field MUST be a string (e.g., `"1"`, `"2"`), NOT an integer."""
+
         prompt = create_agent_prompt(
             "initializer",
             project_dir=self.project_dir,
             task_description=task_description,
+            task_plan_schema=task_plan_schema,
         )
 
         # Run session (pass prompt directly, no file needed)
         # Enable debug logging to .rasen/debug_logs/
         debug_log_dir = self.project_dir / ".rasen" / "debug_logs"
-        start_time = time.time()
+        start_time = datetime.now(UTC)
+        start_ts = time.time()
         try:
             result = run_claude_session(
                 prompt,
@@ -396,10 +504,10 @@ class OrchestrationLoop:
                 debug_log_dir=debug_log_dir,
             )
         finally:
-            duration = time.time() - start_time
+            duration = time.time() - start_ts
 
         # Extract session ID for logging
-        session_id = getattr(result, "session_id", "unknown")[:8]
+        session_id = result.session_id[:8]
         logger.info(f"Session {self.state.iteration}: Claude session ID: {session_id}")
 
         # Parse actual output from initializer session
@@ -413,6 +521,21 @@ class OrchestrationLoop:
             status = SessionStatus.CONTINUE
         else:
             status = SessionStatus.FAILED
+
+        # Record initializer session metrics
+        session_metrics = SessionMetrics(
+            session_id=result.session_id,
+            agent_type="initializer",
+            subtask_id=None,
+            duration_seconds=duration,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            started_at=start_time,
+            completed_at=datetime.now(UTC),
+            status="completed" if status == SessionStatus.COMPLETE else "failed",
+        )
+        self.metrics_store.record_session(session_metrics)
 
         return SessionResult(
             status=status,
@@ -452,5 +575,20 @@ class OrchestrationLoop:
             total_commits=self.state.total_commits,
             completed_subtasks=completed,
             total_subtasks=total,
+        )
+        self.status_store.update(status)
+
+    def _update_status_initializer(self, description: str) -> None:
+        """Update status file during Initializer phase."""
+        status = StatusInfo(
+            pid=os.getpid(),
+            iteration=self.state.iteration,
+            subtask_id=None,
+            subtask_description=description,
+            current_phase="Initializer",
+            status="running",
+            total_commits=0,
+            completed_subtasks=0,
+            total_subtasks=0,
         )
         self.status_store.update(status)

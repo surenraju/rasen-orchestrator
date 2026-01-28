@@ -4,42 +4,39 @@ from __future__ import annotations
 
 import time
 from collections import Counter
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from rasen.claude_runner import run_claude_session
 from rasen.config import Config
-from rasen.events import parse_events
 from rasen.exceptions import SessionError
 from rasen.git import get_git_diff
 from rasen.logging import get_logger
-from rasen.models import ImplementationPlan
+from rasen.models import ImplementationPlan, SessionMetrics
 from rasen.prompts import create_agent_prompt
+from rasen.stores.metrics_store import MetricsStore
+from rasen.stores.plan_store import PlanStore
 from rasen.stores.status_store import StatusStore
 
 logger = get_logger(__name__)
 
 
-class QAIssue(BaseModel):
-    """A single QA issue."""
-
-    description: str
-    occurrence_count: int = 1
-
-
+@dataclass
 class QAResult:
     """Result of a QA validation iteration."""
 
-    def __init__(self, approved: bool, issues: list[str] | None = None) -> None:
-        """Initialize QA result.
+    approved: bool
+    issues: list[str] = field(default_factory=list)
 
-        Args:
-            approved: Whether QA approved the implementation
-            issues: List of issues found (if rejected)
-        """
-        self.approved = approved
-        self.issues = issues or []
+
+class QALoopResult(BaseModel):
+    """Result of the entire QA loop."""
+
+    passed: bool
+    issues: list[str] = []  # Issues if rejected
 
 
 class QAHistory:
@@ -104,7 +101,7 @@ def run_qa_loop(
     project_dir: Path,
     baseline_commit: str,
     task_description: str,
-) -> bool:
+) -> QALoopResult:
     """Run QA validation loop after all subtasks complete.
 
     This implements the Coder ↔ QA pattern:
@@ -121,14 +118,14 @@ def run_qa_loop(
         task_description: Original task description
 
     Returns:
-        True if QA approved, False if escalation needed
+        QALoopResult with passed status and issues if rejected
 
     Raises:
         SessionError: If QA or fix session fails critically
     """
     if not config.qa.enabled:
         logger.info("QA loop disabled, skipping")
-        return True
+        return QALoopResult(passed=True)
 
     max_iterations = config.qa.max_iterations
     history = QAHistory()
@@ -154,7 +151,7 @@ def run_qa_loop(
 
         if qa_result.approved:
             logger.info("QA approved - implementation complete!")
-            return True
+            return QALoopResult(passed=True)
 
         logger.warning(f"QA rejected implementation (iteration {iteration}/{max_iterations})")
         logger.info(f"Issues found: {len(qa_result.issues)}")
@@ -171,12 +168,13 @@ def run_qa_loop(
             # Create escalation file
             _create_escalation_file(project_dir, recurring, history)
             logger.error("Created QA_ESCALATION.md - human intervention required")
-            return False
+            recurring_issues = [f"{issue} (x{count})" for issue, count in recurring]
+            return QALoopResult(passed=False, issues=recurring_issues)
 
         # Don't fix on last iteration - just fail
         if iteration >= max_iterations:
             logger.error(f"QA loop exceeded max iterations ({max_iterations})")
-            return False
+            return QALoopResult(passed=False, issues=qa_result.issues)
 
         # Run coder fix session
         _run_coder_qa_fix_session(config, qa_result.issues, project_dir)
@@ -184,7 +182,7 @@ def run_qa_loop(
         # Delay between iterations
         time.sleep(config.orchestrator.session_delay_seconds)
 
-    return False  # Should not reach here, but safety
+    return QALoopResult(passed=False)  # Should not reach here, but safety
 
 
 def _run_qa_session(
@@ -236,6 +234,9 @@ def _run_qa_session(
     # Run QA session (pass prompt directly, no file needed)
     # Enable debug logging to .rasen/debug_logs/
     debug_log_dir = project_dir / ".rasen" / "debug_logs"
+    metrics_store = MetricsStore(project_dir / ".rasen")
+    start_time = datetime.now(UTC)
+    start_ts = time.time()
     try:
         result = run_claude_session(
             prompt,
@@ -243,29 +244,45 @@ def _run_qa_session(
             config.orchestrator.session_timeout_seconds,
             debug_log_dir=debug_log_dir,
         )
+        duration = time.time() - start_ts
         # Extract session ID for logging
-        session_id = getattr(result, "session_id", "unknown")[:8]
+        session_id = result.session_id[:8]
         logger.info(f"QA session ID: {session_id}")
+
+        # Record QA session metrics
+        session_metrics = SessionMetrics(
+            session_id=result.session_id,
+            agent_type="qa",
+            subtask_id=None,
+            duration_seconds=duration,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            started_at=start_time,
+            completed_at=datetime.now(UTC),
+            status="completed",
+        )
+        metrics_store.record_session(session_metrics)
     except SessionError as e:
         logger.error(f"QA session failed: {e}")
         # On QA failure, assume rejection to be safe
         return QAResult(approved=False, issues=[f"QA session failed: {e}"])
 
-    # Parse events from session output
-    # NOTE: Current implementation doesn't capture stdout, so this is placeholder
-    events = parse_events('<event topic="qa.approved">All criteria met</event>')
+    # Read QA state from state.json
+    plan_store = PlanStore(project_dir / ".rasen")
+    updated_plan = plan_store.load()
 
-    # Check for approval or rejection
-    for event in events:
-        if event.topic == "qa.approved":
-            return QAResult(approved=True)
-        elif event.topic == "qa.rejected":
-            # Parse issues from payload
-            issues = _parse_qa_issues(event.payload)
-            return QAResult(approved=False, issues=issues)
+    if not updated_plan:
+        logger.warning("No plan found, assuming rejected for safety")
+        return QAResult(approved=False, issues=["No implementation plan found"])
+
+    if updated_plan.qa.status == "approved":
+        return QAResult(approved=True)
+    elif updated_plan.qa.status == "rejected":
+        return QAResult(approved=False, issues=updated_plan.qa.issues)
 
     # Default to rejection if no clear signal (fail-closed for quality)
-    logger.warning("No clear QA signal, assuming rejected for safety")
+    logger.warning("No clear QA signal in JSON, assuming rejected for safety")
     return QAResult(approved=False, issues=["No clear QA signal received"])
 
 
@@ -296,6 +313,9 @@ def _run_coder_qa_fix_session(config: Config, issues: list[str], project_dir: Pa
     # Run coder session (pass prompt directly, no file needed)
     # Enable debug logging to .rasen/debug_logs/
     debug_log_dir = project_dir / ".rasen" / "debug_logs"
+    metrics_store = MetricsStore(project_dir / ".rasen")
+    start_time = datetime.now(UTC)
+    start_ts = time.time()
     try:
         result = run_claude_session(
             prompt,
@@ -303,46 +323,28 @@ def _run_coder_qa_fix_session(config: Config, issues: list[str], project_dir: Pa
             config.orchestrator.session_timeout_seconds,
             debug_log_dir=debug_log_dir,
         )
+        duration = time.time() - start_ts
         # Extract session ID for logging
-        session_id = getattr(result, "session_id", "unknown")[:8]
+        session_id = result.session_id[:8]
         logger.info(f"Coder QA fix session ID: {session_id}")
+
+        # Record coder QA fix session metrics
+        session_metrics = SessionMetrics(
+            session_id=result.session_id,
+            agent_type="coder",
+            subtask_id="qa-fix",
+            duration_seconds=duration,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            started_at=start_time,
+            completed_at=datetime.now(UTC),
+            status="completed",
+        )
+        metrics_store.record_session(session_metrics)
     except SessionError as e:
         logger.error(f"Coder QA fix session failed: {e}")
         raise
-
-
-def _parse_qa_issues(payload: str) -> list[str]:
-    """Parse QA issues from event payload.
-
-    Args:
-        payload: Event payload text
-
-    Returns:
-        List of individual issues
-    """
-    # Simple parsing: split on numbered lines or bullet points
-    lines = payload.strip().split("\n")
-    issues = []
-
-    for raw_line in lines:
-        line = raw_line.strip()
-        if not line:
-            continue
-
-        # Remove common prefixes
-        for prefix in ["- ", "* ", "• "]:
-            if line.startswith(prefix):
-                line = line[len(prefix) :].strip()
-                break
-
-        # Remove numbered prefixes (1. 2. etc)
-        if line and line[0].isdigit() and ". " in line:
-            line = line.split(". ", 1)[1].strip()
-
-        if line:
-            issues.append(line)
-
-    return issues if issues else [payload]  # Fallback to full payload
 
 
 def _create_escalation_file(

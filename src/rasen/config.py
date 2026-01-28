@@ -44,11 +44,11 @@ class WorktreeConfig(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    """Cross-session memory settings."""
+    """Cross-session memory settings (stored in state.json)."""
 
     enabled: bool = True
-    path: str = ".rasen/memories.md"
-    max_tokens: int = 2000
+    max_decisions: int = 5  # Max decision entries to keep
+    max_learnings: int = 5  # Max learning entries to keep
 
 
 class BackpressureConfig(BaseModel):

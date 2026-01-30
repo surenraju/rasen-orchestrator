@@ -1,4 +1,4 @@
-.PHONY: help fmt lint typecheck test test-unit test-integration coverage build check all clean install
+.PHONY: help fmt lint typecheck test test-unit test-integration coverage build check all clean install install-global uninstall
 
 # Default target
 help:
@@ -19,8 +19,10 @@ help:
 	@echo "  make coverage     - Run tests with coverage report"
 	@echo "  make coverage-html - Generate HTML coverage report"
 	@echo ""
-	@echo "Building:"
-	@echo "  make build        - Build standalone binary"
+	@echo "Building & Installing:"
+	@echo "  make build          - Build standalone binary"
+	@echo "  make install-global - Build and install to /usr/local/bin (available anywhere)"
+	@echo "  make uninstall      - Remove from /usr/local/bin"
 	@echo ""
 	@echo "Quality Gates:"
 	@echo "  make check        - Run all checks (fmt + lint + typecheck + test + coverage)"
@@ -89,7 +91,7 @@ coverage-html:
 # Build standalone binary
 build:
 	@echo "🔨 Building standalone binary..."
-	python build.py
+	python3 build.py
 	@echo "✅ Binary built: dist/rasen"
 
 # Run all quality checks (MANDATORY before commit)
@@ -121,3 +123,25 @@ install:
 	@echo "📦 Installing dependencies..."
 	uv sync
 	@echo "✅ Dependencies installed"
+
+# Build and install globally (available as 'rasen' command anywhere)
+# Installs to ~/bin (no sudo needed) - make sure ~/bin is in your PATH
+install-global: build
+	@echo "🌍 Installing rasen globally..."
+	@mkdir -p $(HOME)/bin
+	@cp dist/rasen $(HOME)/bin/rasen
+	@chmod +x $(HOME)/bin/rasen
+	@echo "✅ Installed to $(HOME)/bin/rasen"
+	@echo ""
+	@if echo "$$PATH" | grep -q "$(HOME)/bin"; then \
+		echo "   Run 'rasen --version' to verify"; \
+	else \
+		echo "⚠️  Add ~/bin to PATH: export PATH=\"$$HOME/bin:$$PATH\""; \
+		echo "   Add to ~/.zshrc for permanent access"; \
+	fi
+
+# Uninstall global binary
+uninstall:
+	@echo "🗑️  Removing global rasen..."
+	@rm -f $(HOME)/bin/rasen
+	@echo "✅ Uninstalled"

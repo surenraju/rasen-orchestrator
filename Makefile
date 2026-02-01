@@ -20,9 +20,10 @@ help:
 	@echo "  make coverage-html - Generate HTML coverage report"
 	@echo ""
 	@echo "Building & Installing:"
-	@echo "  make build          - Build standalone binary"
-	@echo "  make install-global - Build and install to /usr/local/bin (available anywhere)"
-	@echo "  make uninstall      - Remove from /usr/local/bin"
+	@echo "  make build          - Build standalone binary (PyInstaller)"
+	@echo "  make build-install  - Build and install globally via uv tool (recommended)"
+	@echo "  make install-global - Build binary and install to ~/bin"
+	@echo "  make uninstall      - Remove from ~/bin"
 	@echo ""
 	@echo "Quality Gates:"
 	@echo "  make check        - Run all checks (fmt + lint + typecheck + test + coverage)"
@@ -124,10 +125,18 @@ install:
 	uv sync
 	@echo "✅ Dependencies installed"
 
-# Build and install globally (available as 'rasen' command anywhere)
+# Build and install globally using uv tool (recommended)
+# Installs to ~/.local/bin (no sudo needed)
+build-install:
+	@echo "🌍 Building and installing rasen globally..."
+	uv tool install . --force
+	@echo "✅ Installed globally"
+	@echo "   Run 'rasen --version' to verify"
+
+# Build and install globally (binary approach with PyInstaller)
 # Installs to ~/bin (no sudo needed) - make sure ~/bin is in your PATH
 install-global: build
-	@echo "🌍 Installing rasen globally..."
+	@echo "🌍 Installing rasen globally (binary)..."
 	@mkdir -p $(HOME)/bin
 	@cp dist/rasen $(HOME)/bin/rasen
 	@chmod +x $(HOME)/bin/rasen

@@ -139,6 +139,116 @@ stall:
 
 
 @main.command()
+@click.option("--task", "-t", help="New task description (optional, keeps existing if not provided)")
+@click.option("--keep-progress", is_flag=True, help="Keep progress.txt and metrics")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def reinit(ctx: click.Context, task: str | None, keep_progress: bool, force: bool) -> None:
+    """Re-initialize to adapt to changes in task.md or prompts.
+
+    This command:
+    - Backs up current state.json to state.json.bak
+    - Deletes state.json so initializer runs fresh
+    - Keeps config.yaml and prompts (your customizations)
+    - Optionally updates task.txt if --task provided
+
+    Use this after updating task.md, testing.md, or other referenced docs.
+    """
+    import shutil  # noqa: PLC0415
+    from datetime import datetime  # noqa: PLC0415
+
+    config = ctx.obj["config"]
+    project_dir = Path(config.project.root)
+    rasen_dir = project_dir / ".rasen"
+
+    if not rasen_dir.exists():
+        click.echo("❌ No .rasen directory found. Run 'rasen init' first.")
+        raise SystemExit(1)
+
+    state_file = rasen_dir / "state.json"
+    if not state_file.exists():
+        click.echo("❌ No state.json found. Nothing to reinitialize.")
+        raise SystemExit(1)
+
+    # Confirmation
+    if not force:
+        click.echo("⚠️  This will reset the implementation plan and start fresh.")
+        click.echo("   - state.json will be backed up and deleted")
+        click.echo("   - Config and prompts will be preserved")
+        if keep_progress:
+            click.echo("   - progress.txt and metrics will be kept")
+        else:
+            click.echo("   - progress.txt and metrics will be reset")
+        if not click.confirm("\nProceed with re-initialization?"):
+            click.echo("Cancelled.")
+            return
+
+    # Backup state.json
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    backup_file = rasen_dir / f"state.json.bak.{timestamp}"
+    shutil.copy2(state_file, backup_file)
+    click.echo(f"📦 Backed up state.json → {backup_file.name}")
+
+    # Delete state.json
+    state_file.unlink()
+    click.echo("🗑️  Deleted state.json")
+
+    # Update task.txt if provided
+    if task:
+        task_file = rasen_dir / "task.txt"
+        task_path = Path(task)
+        task_content = task_path.read_text() if task_path.exists() and task_path.is_file() else task
+        task_file.write_text(task_content.strip())
+        click.echo(f"📝 Updated task.txt")
+
+    # Reset progress and metrics if not keeping
+    if not keep_progress:
+        progress_file = rasen_dir / "progress.txt"
+        if progress_file.exists():
+            progress_file.unlink()
+            click.echo("🗑️  Deleted progress.txt")
+
+        metrics_file = rasen_dir / "metrics.json"
+        if metrics_file.exists():
+            metrics_file.unlink()
+            click.echo("🗑️  Deleted metrics.json")
+
+        # Reset attempt history
+        attempt_file = rasen_dir / "attempt_history.json"
+        if attempt_file.exists():
+            attempt_file.unlink()
+            click.echo("🗑️  Deleted attempt_history.json")
+
+        good_commits_file = rasen_dir / "good_commits.json"
+        if good_commits_file.exists():
+            good_commits_file.unlink()
+            click.echo("🗑️  Deleted good_commits.json")
+
+    # Reset status
+    import os  # noqa: PLC0415
+
+    from rasen.stores.status_store import StatusInfo, StatusStore  # noqa: PLC0415
+
+    status_file = rasen_dir / "status.json"
+    status_store = StatusStore(status_file)
+    status_store.update(
+        StatusInfo(
+            pid=os.getpid(),
+            iteration=0,
+            subtask_id=None,
+            subtask_description=None,
+            status="reinitialized",
+            last_activity=datetime.now(UTC),
+        )
+    )
+
+    click.echo("\n✅ Re-initialization complete")
+    click.echo("   - Preserved: config.yaml, prompts/")
+    click.echo(f"   - Backup: {backup_file.name}")
+    click.echo("\n🚀 Run 'rasen run' to start fresh with updated task definitions")
+
+
+@main.command()
 @click.option("--background", is_flag=True, help="Run in background")
 @click.option("--skip-review", is_flag=True, help="Skip Coder ↔ Reviewer loop")
 @click.option("--skip-qa", is_flag=True, help="Skip Coder ↔ QA loop")

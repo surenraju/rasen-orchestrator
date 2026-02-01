@@ -70,17 +70,20 @@ def init(ctx: click.Context, task: str) -> None:
 # Customize agent prompts and behavior in .rasen/prompts/ directory
 # This file overrides settings from project-level rasen.yml
 
-# Agent settings
+# Agent settings (model can be set per-agent)
 agents:
   initializer:
+    model: claude-opus-4-20250514
     prompt: prompts/initializer.md
     read_only: false
 
   coder:
+    model: claude-opus-4-20250514
     prompt: prompts/coder.md
     read_only: false
 
   reviewer:
+    model: claude-sonnet-4-20250514   # Sonnet for review (fast + accurate)
     prompt: prompts/reviewer.md
     read_only: true       # Reviewer cannot modify files
     enabled: true         # Enable code review
@@ -89,6 +92,7 @@ agents:
     max_iterations: 3     # Max review loops before escalation
 
   qa:
+    model: claude-sonnet-4-20250514   # Sonnet for QA (fast + accurate)
     prompt: prompts/qa.md
     read_only: true                # QA cannot modify files
     enabled: true                  # Enable QA validation

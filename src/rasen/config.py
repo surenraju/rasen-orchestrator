@@ -29,10 +29,25 @@ class OrchestratorConfig(BaseModel):
     idle_timeout_seconds: int = 300  # 5 min
 
 
-class AgentConfig(BaseModel):
-    """Claude agent settings."""
+class ModelsConfig(BaseModel):
+    """Per-agent model configuration."""
 
-    model: str = "claude-sonnet-4-20250514"
+    default: str = "claude-opus-4-20250514"
+    initializer: str | None = None  # Uses default if None
+    coder: str | None = None
+    reviewer: str | None = None
+    qa: str | None = None
+
+    def get_model(self, agent_type: str) -> str:
+        """Get model for a specific agent type."""
+        agent_model = getattr(self, agent_type, None)
+        return agent_model if agent_model else self.default
+
+
+class AgentConfig(BaseModel):
+    """Claude agent settings (deprecated, use models section)."""
+
+    model: str = "claude-opus-4-20250514"
     max_thinking_tokens: int | None = 4096
 
 
@@ -97,7 +112,8 @@ class Config(BaseModel):
 
     project: ProjectConfig = Field(default_factory=ProjectConfig)
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
-    agent: AgentConfig = Field(default_factory=AgentConfig)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)  # Deprecated, use models
     worktree: WorktreeConfig = Field(default_factory=WorktreeConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     backpressure: BackpressureConfig = Field(default_factory=BackpressureConfig)
@@ -105,6 +121,10 @@ class Config(BaseModel):
     stall_detection: StallDetectionConfig = Field(default_factory=StallDetectionConfig)
     review: ReviewConfig = Field(default_factory=ReviewConfig)
     qa: QAConfig = Field(default_factory=QAConfig)
+
+    def get_model(self, agent_type: str) -> str:
+        """Get model for a specific agent type."""
+        return self.models.get_model(agent_type)
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -169,6 +189,15 @@ def _transform_task_config(data: dict[str, Any]) -> dict[str, Any]:
                 result["qa"]["max_iterations"] = qa_config["max_iterations"]
             if "recurring_issue_threshold" in qa_config:
                 result["qa"]["recurring_issue_threshold"] = qa_config["recurring_issue_threshold"]
+
+    # Extract per-agent models -> models section
+    if "models" not in result:
+        result["models"] = {}
+    for agent_name in ["initializer", "coder", "reviewer", "qa"]:
+        if agent_name in agents and isinstance(agents[agent_name], dict):
+            agent_config = agents[agent_name]
+            if "model" in agent_config:
+                result["models"][agent_name] = agent_config["model"]
 
     return result
 

@@ -413,6 +413,7 @@ class OrchestrationLoop:
                 self.project_dir,
                 self.config.orchestrator.session_timeout_seconds,
                 debug_log_dir=debug_log_dir,
+                model=self.config.get_model("coder"),
             )
         finally:
             duration = time.time() - start_ts
@@ -530,6 +531,7 @@ class OrchestrationLoop:
                 self.project_dir,
                 self.config.orchestrator.session_timeout_seconds,
                 debug_log_dir=debug_log_dir,
+                model=self.config.get_model("initializer"),
             )
         finally:
             duration = time.time() - start_ts

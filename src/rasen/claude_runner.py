@@ -123,6 +123,7 @@ def run_claude_session(
     project_dir: Path,
     timeout_seconds: int = 1800,  # 30 minutes default
     debug_log_dir: Path | None = None,
+    model: str | None = None,
 ) -> SessionRunResult:
     """Run a Claude Code CLI session in non-interactive mode.
 
@@ -157,6 +158,11 @@ def run_claude_session(
         "--session-id",
         session_id,
     ]
+
+    # Add model if specified
+    if model:
+        cmd.extend(["--model", model])
+        logger.info(f"Session {session_id[:8]}: Using model {model}")
 
     # Add debug logging if requested
     if debug_log_dir:
@@ -251,7 +257,11 @@ def run_claude_session(
                     msg = data["message"]
                     if "usage" in msg:
                         usage = msg["usage"]
-                        total_input_tokens = usage.get("input_tokens", total_input_tokens)
+                        # Include cache tokens in total input count
+                        input_base = usage.get("input_tokens", 0)
+                        cache_creation = usage.get("cache_creation_input_tokens", 0)
+                        cache_read = usage.get("cache_read_input_tokens", 0)
+                        total_input_tokens = input_base + cache_creation + cache_read
                         total_output_tokens = usage.get("output_tokens", total_output_tokens)
                 # Extract text content from result messages
                 if data.get("type") == "result" and "result" in data:

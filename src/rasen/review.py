@@ -157,6 +157,7 @@ def _run_reviewer_session(
             project_dir,
             config.orchestrator.session_timeout_seconds,
             debug_log_dir=debug_log_dir,
+            model=config.get_model("reviewer"),
         )
         duration = time.time() - start_ts
         # Extract session ID for logging
@@ -259,6 +260,7 @@ def _run_coder_fix_session(
             project_dir,
             config.orchestrator.session_timeout_seconds,
             debug_log_dir=debug_log_dir,
+            model=config.get_model("reviewer"),
         )
         duration = time.time() - start_ts
         # Extract session ID for logging

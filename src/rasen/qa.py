@@ -171,6 +171,7 @@ def run_qa_for_subtask(
             project_dir,
             config.orchestrator.session_timeout_seconds,
             debug_log_dir=debug_log_dir,
+            model=config.get_model("qa"),
         )
         duration = time.time() - start_ts
         session_id = result.session_id[:8]
@@ -381,6 +382,7 @@ def _run_qa_session(
             project_dir,
             config.orchestrator.session_timeout_seconds,
             debug_log_dir=debug_log_dir,
+            model=config.get_model("qa"),
         )
         duration = time.time() - start_ts
         # Extract session ID for logging
@@ -460,6 +462,7 @@ def _run_coder_qa_fix_session(config: Config, issues: list[str], project_dir: Pa
             project_dir,
             config.orchestrator.session_timeout_seconds,
             debug_log_dir=debug_log_dir,
+            model=config.get_model("qa"),
         )
         duration = time.time() - start_ts
         # Extract session ID for logging

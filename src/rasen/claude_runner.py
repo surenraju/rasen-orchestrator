@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import subprocess
 import threading
 import uuid
@@ -12,6 +14,47 @@ from pathlib import Path
 from typing import Any
 
 from rasen.exceptions import ConfigurationError, SessionError
+
+
+def _load_anthropic_env() -> dict[str, str]:
+    """Load Anthropic auth env vars from shell config files.
+
+    Reads ANTHROPIC_* vars from ~/.zshrc, ~/.bashrc, ~/.profile
+    to make them available for Claude Code subprocess.
+
+    Returns:
+        Dict of environment variables to add
+    """
+    env_vars: dict[str, str] = {}
+
+    # Files to check for env vars
+    config_files = [
+        Path.home() / ".zshrc",
+        Path.home() / ".bashrc",
+        Path.home() / ".profile",
+        Path.home() / ".bash_profile",
+    ]
+
+    # Pattern to match export statements
+    export_pattern = re.compile(
+        r'^export\s+(ANTHROPIC_\w+)=["\']?([^"\'#\n]+)["\']?',
+        re.MULTILINE
+    )
+
+    for config_file in config_files:
+        if config_file.exists():
+            try:
+                content = config_file.read_text()
+                for match in export_pattern.finditer(content):
+                    var_name = match.group(1)
+                    var_value = match.group(2).strip()
+                    if var_name not in env_vars:  # First found wins
+                        env_vars[var_name] = var_value
+                        logger.debug(f"Loaded {var_name} from {config_file}")
+            except Exception as e:
+                logger.warning(f"Could not read {config_file}: {e}")
+
+    return env_vars
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +177,13 @@ def run_claude_session(
         stream_log_file = debug_log_dir / f"claude_stream_{session_id[:8]}.log"
 
     try:
+        # Build environment with Anthropic auth vars from shell config
+        env = os.environ.copy()
+        anthropic_env = _load_anthropic_env()
+        env.update(anthropic_env)
+        if anthropic_env:
+            logger.info(f"Loaded Anthropic env vars: {list(anthropic_env.keys())}")
+
         # Use Popen for streaming output instead of blocking run()
         process = subprocess.Popen(
             cmd,
@@ -142,6 +192,7 @@ def run_claude_session(
             stderr=subprocess.PIPE,
             text=True,
             cwd=project_dir,
+            env=env,
         )
 
         # Send prompt via stdin

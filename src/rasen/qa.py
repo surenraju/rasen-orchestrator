@@ -15,7 +15,7 @@ from rasen.config import Config
 from rasen.exceptions import SessionError
 from rasen.git import get_git_diff
 from rasen.logging import get_logger
-from rasen.models import ImplementationPlan, SessionMetrics
+from rasen.models import ImplementationPlan, SessionMetrics, Subtask
 from rasen.prompts import create_agent_prompt
 from rasen.stores.metrics_store import MetricsStore
 from rasen.stores.plan_store import PlanStore
@@ -93,6 +93,144 @@ class QAHistory:
         # Simple normalization: lowercase, strip whitespace
         # Could be enhanced with fuzzy matching
         return issue.lower().strip()
+
+
+def run_qa_for_subtask(
+    config: Config,
+    subtask: Subtask,
+    project_dir: Path,
+    baseline_commit: str,
+) -> QALoopResult:
+    """Run QA validation for a single completed subtask.
+
+    This is a lighter-weight QA check for per-subtask validation.
+    It checks:
+    1. Acceptance criteria are met
+    2. Required test files exist
+    3. Tests pass
+
+    Args:
+        config: RASEN configuration
+        subtask: Subtask that was just completed
+        project_dir: Path to project directory
+        baseline_commit: Commit before subtask started
+
+    Returns:
+        QALoopResult with passed status and issues if rejected
+    """
+
+    if not config.qa.enabled:
+        logger.info("QA disabled, skipping per-subtask QA")
+        return QALoopResult(passed=True)
+
+    logger.info(f"Running per-subtask QA for subtask {subtask.id}")
+
+    # Get diff for just this subtask
+    try:
+        diff = get_git_diff(project_dir, baseline_commit)
+    except Exception as e:
+        logger.warning(f"Could not get git diff: {e}")
+        diff = "(Could not generate diff)"
+
+    # Build QA context for subtask
+    subtask_context = f"""
+## Subtask {subtask.id}: {subtask.title or subtask.description[:50]}
+
+**Description:**
+{subtask.description}
+
+**Acceptance Criteria:**
+{chr(10).join(f'- {c}' for c in (subtask.acceptance_criteria or []))}
+
+**Expected Files:**
+{chr(10).join(f'- {f}' for f in (subtask.files or []))}
+
+**Expected Tests:**
+{chr(10).join(f'- {t}' for t in (subtask.tests or []))}
+"""
+
+    # Render QA prompt for subtask
+    prompt = create_agent_prompt(
+        "qa",
+        project_dir=project_dir,
+        task_description=subtask_context,
+        implementation_plan=f"Validating subtask {subtask.id}",
+        full_git_diff=diff,
+        test_results="(run tests for this subtask)",
+    )
+
+    # Run QA session
+    debug_log_dir = project_dir / ".rasen" / "debug_logs"
+    metrics_store = MetricsStore(project_dir / ".rasen")
+    start_time = datetime.now(UTC)
+    start_ts = time.time()
+
+    try:
+        result = run_claude_session(
+            prompt,
+            project_dir,
+            config.orchestrator.session_timeout_seconds,
+            debug_log_dir=debug_log_dir,
+        )
+        duration = time.time() - start_ts
+        session_id = result.session_id[:8]
+        logger.info(f"Per-subtask QA session ID: {session_id}")
+
+        # Record metrics
+        session_metrics = SessionMetrics(
+            session_id=result.session_id,
+            agent_type="qa",
+            subtask_id=subtask.id,
+            duration_seconds=duration,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            started_at=start_time,
+            completed_at=datetime.now(UTC),
+            status="completed",
+        )
+        metrics_store.record_session(session_metrics)
+
+    except SessionError as e:
+        logger.error(f"Per-subtask QA session failed: {e}")
+        return QALoopResult(passed=False, issues=[f"QA session failed: {e}"])
+
+    # Check QA result from state.json
+    plan_store = PlanStore(project_dir / ".rasen")
+    updated_plan = plan_store.load()
+
+    # Determine qa_result based on plan/subtask qa status
+    qa_result = QALoopResult(passed=True)  # Default to pass for per-subtask
+
+    if not updated_plan:
+        logger.warning("No plan found after QA, assuming rejected")
+        qa_result = QALoopResult(passed=False, issues=["No plan found"])
+    else:
+        # Find the subtask and check its qa field
+        subtask_qa_found = False
+        for s in updated_plan.subtasks:
+            if s.id == subtask.id and s.qa:
+                subtask_qa_found = True
+                qa_status = s.qa.status if hasattr(s.qa, "status") else None
+                qa_issues = s.qa.issues if hasattr(s.qa, "issues") else []
+                if qa_status == "approved":
+                    logger.info(f"Per-subtask QA approved for {subtask.id}")
+                    qa_result = QALoopResult(passed=True)
+                elif qa_status == "rejected":
+                    logger.warning(f"Per-subtask QA rejected for {subtask.id}")
+                    qa_result = QALoopResult(passed=False, issues=qa_issues or ["No details"])
+                break
+
+        # Check plan-level QA as fallback if no subtask-level qa
+        if not subtask_qa_found:
+            if updated_plan.qa.status == "approved":
+                qa_result = QALoopResult(passed=True)
+            elif updated_plan.qa.status == "rejected":
+                qa_result = QALoopResult(passed=False, issues=updated_plan.qa.issues)
+            else:
+                logger.info(f"No clear QA signal for {subtask.id}, defaulting to passed")
+
+    return qa_result
 
 
 def run_qa_loop(

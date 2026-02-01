@@ -62,15 +62,25 @@ class PlanStore:
         return self.path.exists()
 
     def get_next_subtask(self) -> Subtask | None:
-        """Get next pending subtask.
+        """Get next subtask to work on.
+
+        Priority:
+        1. IN_PROGRESS tasks (resume interrupted work)
+        2. PENDING tasks (new work)
 
         Returns:
-            First pending subtask or None if all complete.
+            Next subtask to work on, or None if all complete.
         """
         plan = self.load()
         if plan is None:
             return None
 
+        # First, check for in_progress tasks (resume interrupted work)
+        for subtask in plan.subtasks:
+            if subtask.status == SubtaskStatus.IN_PROGRESS:
+                return subtask
+
+        # Then, check for pending tasks
         for subtask in plan.subtasks:
             if subtask.status == SubtaskStatus.PENDING:
                 return subtask

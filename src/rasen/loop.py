@@ -24,7 +24,7 @@ from rasen.models import (
     TerminationReason,
 )
 from rasen.prompts import create_agent_prompt
-from rasen.qa import run_qa_loop
+from rasen.qa import QALoopResult, run_qa_for_subtask, run_qa_loop
 from rasen.review import ReviewLoopResult, run_review_loop
 from rasen.stores.metrics_store import MetricsStore
 from rasen.stores.plan_store import PlanStore
@@ -252,17 +252,45 @@ class OrchestrationLoop:
                                 )
 
                             if review_result is None or review_result.passed:
-                                self.plan_store.mark_complete(subtask.id)
-                                self.recovery_store.record_good_commit(
-                                    self._get_commit_hash(), subtask.id
-                                )
-                                review_msg = (
-                                    "and reviewed" if self.config.review.per_subtask else ""
-                                )
-                                logger.info(
-                                    f"Session {self.state.iteration}: "
-                                    f"Subtask {subtask.id} completed {review_msg} successfully"
-                                )
+                                # Run per-subtask QA if enabled
+                                subtask_qa: QALoopResult | None = None
+                                if self.config.qa.enabled and self.config.qa.per_subtask:
+                                    logger.info(f"Running per-subtask QA for {subtask.id}")
+                                    subtask_qa = run_qa_for_subtask(
+                                        self.config, subtask, self.project_dir, commit_before
+                                    )
+
+                                if subtask_qa is None or subtask_qa.passed:
+                                    self.plan_store.mark_complete(subtask.id)
+                                    self.recovery_store.record_good_commit(
+                                        self._get_commit_hash(), subtask.id
+                                    )
+                                    review_msg = (
+                                        "and reviewed" if self.config.review.per_subtask else ""
+                                    )
+                                    qa_msg = (
+                                        "and QA'd" if self.config.qa.per_subtask else ""
+                                    )
+                                    logger.info(
+                                        f"Session {self.state.iteration}: "
+                                        f"Subtask {subtask.id} completed "
+                                        f"{review_msg} {qa_msg} successfully"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Subtask {subtask.id} completed but failed per-subtask QA"
+                                    )
+                                    # Record QA rejection for recovery context
+                                    issues = subtask_qa.issues[:3] if subtask_qa.issues else []
+                                    issues_summary = "; ".join(issues) if issues else "No details"
+                                    self.recovery_store.record_attempt(
+                                        subtask_id=subtask.id,
+                                        session=self.state.iteration,
+                                        success=False,
+                                        approach="Subtask completed but QA rejected",
+                                        error_message=f"QA rejected: {issues_summary}",
+                                    )
+                                    self.state.consecutive_failures += 1
                             else:
                                 logger.warning(f"Subtask {subtask.id} completed but failed review")
                                 # Record review rejection for recovery context

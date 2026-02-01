@@ -106,6 +106,7 @@ def run_claude_session(
         "claude",
         "chat",
         "--print",
+        "--verbose",  # Required for stream-json with --print
         "--output-format",
         "stream-json",  # Get token usage from streaming JSON
         "--permission-mode",
